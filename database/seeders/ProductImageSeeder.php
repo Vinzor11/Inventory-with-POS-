@@ -106,38 +106,33 @@ class ProductImageSeeder extends Seeder
             $targetPath = $targetFolder . DIRECTORY_SEPARATOR . $targetFilename;
             $imagePath = 'products/' . $targetFilename;
 
+            // Skip if product already has the correct image path and file exists
+            if ($product->image === $imagePath && File::exists($targetPath)) {
+                $skipped++;
+                continue;
+            }
+
             // Copy file to storage
             try {
-                // If file already exists, delete it first
-                if (File::exists($targetPath)) {
-                    File::delete($targetPath);
-                }
-
-                // Copy the file
-                if (!File::copy($sourcePath, $targetPath)) {
-                    throw new \Exception("Failed to copy file from {$sourcePath} to {$targetPath}");
-                }
-                
-                // Verify the file was copied successfully
+                // Only copy if target file doesn't exist
                 if (!File::exists($targetPath)) {
-                    throw new \Exception("Target file was not created at {$targetPath}");
-                }
-                
-                // Always update product with image path (relative to storage/app/public)
-                // This ensures products get the correct image even if they already have one
-                $oldImage = $product->image;
-                $product->image = $imagePath;
-                $product->save();
-                
-                // If product had a different image before, delete the old one
-                if ($oldImage && $oldImage !== $imagePath && File::exists(storage_path('app/public/' . $oldImage))) {
-                    // Only delete if it's not one of our seeded images (has hash in name)
-                    if (!preg_match('/^[a-z0-9\-]+\.(jpg|jpeg|png|webp)$/i', basename($oldImage))) {
-                        File::delete(storage_path('app/public/' . $oldImage));
+                    // Copy the file
+                    if (!File::copy($sourcePath, $targetPath)) {
+                        throw new \Exception("Failed to copy file from {$sourcePath} to {$targetPath}");
+                    }
+                    
+                    // Verify the file was copied successfully
+                    if (!File::exists($targetPath)) {
+                        throw new \Exception("Target file was not created at {$targetPath}");
                     }
                 }
                 
-                $this->command->info("✓ Added/Updated image for {$product->name} (SKU: {$productSku})");
+                // Update product with image path only if it's different
+                if ($product->image !== $imagePath) {
+                    $product->update(['image' => $imagePath]);
+                }
+                
+                $this->command->info("✓ Image set for {$product->name} (SKU: {$productSku})");
                 $processed++;
                     
             } catch (\Exception $e) {

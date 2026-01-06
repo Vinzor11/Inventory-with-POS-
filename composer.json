@@ -52,7 +52,6 @@
             "@php artisan migrate --force",
             "@php artisan db:seed --class=Database\\Seeders\\ProductSeeder --force",
             "@php artisan db:seed --class=Database\\Seeders\\AgriculturalProductsSeeder --force",
-            "@php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force",
             "@php artisan storage:link",
             "@php artisan config:cache",
             "@php artisan route:cache",
