@@ -8,32 +8,9 @@ use App\Models\ProductVariant;
 use App\Models\Inventory;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 
 class ProductSeeder extends Seeder
 {
-    /**
-     * Image mapping from filenames to product SKUs
-     */
-    private array $imageMapping = [
-        'CWN' => 'CWN.JPEG',
-        'UMB-NAIL' => 'umbrella-nails.png',
-        'TIE-WIRE' => 'tie wire.jpg',
-        'PALA' => 'shovel.webp',
-        'VULCASEAL' => 'vulcaseal.webp',
-        'YERO' => 'yero.webp',
-        'YERO-COLOR' => 'yero with color.jpg',
-        'PLAIN-SHEET' => 'plain sheet.jpeg',
-        'STEEL-BAR' => 'steel bar.jpg',
-        'MARINE-PLY' => 'marine plywood.jpg',
-        'ORD-PLY' => 'ordinary plywood.webp',
-        'COCO-LUMBER' => 'cocolumber.jpg',
-        'CEMENT' => 'Apo.jpg',
-        'SAND' => 'sand.jpeg',
-        'GRAVEL' => 'gravel.jpg',
-        'GRAVA' => 'grava.jpg',
-        'PVC-PIPE' => 'pvp pipe.jpg',
-    ];
 
     /**
      * Run the database seeds.
@@ -43,9 +20,6 @@ class ProductSeeder extends Seeder
     {
         // Delete existing non-agricultural products
         $this->cleanExistingProducts();
-        
-        // Prepare image storage directory
-        $this->prepareImageStorage();
 
         // Create categories
         $hardwareCategory = ProductCategory::firstOrCreate(
@@ -516,9 +490,6 @@ class ProductSeeder extends Seeder
             'unit_price' => 400.00,
         ]);
 
-        // Assign images to all products
-        $this->assignImagesToProducts();
-        
         $this->command->info('✓ Product seeder completed - ' . Product::count() . ' products created');
     }
 
@@ -535,163 +506,6 @@ class ProductSeeder extends Seeder
         ]);
 
         return $variant;
-    }
-
-    /**
-     * Prepare image storage directory
-     */
-    private function prepareImageStorage(): void
-    {
-        $targetFolder = storage_path('app/public/products');
-        
-        // Ensure storage/app/public directory exists
-        $publicStoragePath = storage_path('app/public');
-        if (!File::exists($publicStoragePath)) {
-            File::makeDirectory($publicStoragePath, 0755, true);
-        }
-
-        // Create target directory if it doesn't exist
-        if (!File::exists($targetFolder)) {
-            File::makeDirectory($targetFolder, 0755, true);
-        }
-    }
-
-    /**
-     * Assign images to products by copying from J Trading folder
-     */
-    private function assignImagesToProducts(): void
-    {
-        $sourceFolder = base_path('J Trading');
-        $targetFolder = storage_path('app/public/products');
-
-        // Log the path we're looking for (helpful for deployment debugging)
-        $this->command->info("Looking for images in: {$sourceFolder}");
-
-        $processed = 0;
-        $skipped = 0;
-        $errors = 0;
-
-        foreach ($this->imageMapping as $sku => $imageFile) {
-            // Find product by SKU first
-            $product = Product::where('sku', $sku)->first();
-            if (!$product) {
-                $skipped++;
-                continue;
-            }
-
-            // Get file extension and create target filename (always use SKU-based filename)
-            $extension = pathinfo($imageFile, PATHINFO_EXTENSION);
-            $targetFilename = strtolower($sku) . '.' . strtolower($extension);
-            $targetPath = $targetFolder . DIRECTORY_SEPARATOR . $targetFilename;
-            $imagePath = 'products/' . $targetFilename;
-
-            // If product already has an image with hash-based filename, we need to replace it
-            $needsUpdate = false;
-            if ($product->image && $product->image !== $imagePath) {
-                // Check if it's a hash-based filename (long random string)
-                if (preg_match('/products\/[a-zA-Z0-9]{20,}\.(jpg|jpeg|png|webp)$/i', $product->image)) {
-                    $needsUpdate = true;
-                    // Delete old hash-based image file if it exists
-                    $oldImagePath = storage_path('app/public/' . $product->image);
-                    if (File::exists($oldImagePath)) {
-                        try {
-                            File::delete($oldImagePath);
-                        } catch (\Exception $e) {
-                            \Log::warning("Failed to delete old image: " . $product->image);
-                        }
-                    }
-                }
-            }
-
-            // Check if product has a hash-based image path (from manual upload)
-            // Hash-based paths look like: products/nXnNLHPsI6vTnsgSzhDhH9fifkSnOKIc6Hm1Azfu.jpg
-            if ($product->image && preg_match('/products\/[a-zA-Z0-9]{20,}\.(jpg|jpeg|png|webp)$/i', $product->image)) {
-                // Product has a hash-based filename, we need to replace it
-                $oldImagePath = storage_path('app/public/' . $product->image);
-                if (File::exists($oldImagePath)) {
-                    try {
-                        File::delete($oldImagePath);
-                        \Log::info("Deleted old hash-based image: " . $product->image);
-                    } catch (\Exception $e) {
-                        \Log::warning("Failed to delete old image: " . $product->image . " - " . $e->getMessage());
-                    }
-                }
-                // Clear the image path so we can set the correct one
-                $product->image = null;
-                $product->save();
-            }
-
-            // Check if image already exists in storage (from previous run)
-            if (File::exists($targetPath)) {
-                // Image already exists, just update the product record
-                if (!$product->image || $product->image !== $imagePath) {
-                    $product->update(['image' => $imagePath]);
-                    $processed++;
-                }
-                continue;
-            }
-
-            // Try to copy from source folder
-            $sourcePath = $sourceFolder . DIRECTORY_SEPARATOR . $imageFile;
-            
-            // Check if source file exists
-            if (!File::exists($sourcePath)) {
-                // Log missing file for debugging
-                \Log::info("Image file not found: {$sourcePath} for SKU: {$sku}");
-                $skipped++;
-                continue;
-            }
-
-            try {
-                // Ensure target directory exists
-                if (!File::exists($targetFolder)) {
-                    File::makeDirectory($targetFolder, 0755, true);
-                }
-
-                // Copy the file
-                if (!File::copy($sourcePath, $targetPath)) {
-                    throw new \Exception("File copy operation returned false");
-                }
-                
-                // Verify the file was copied
-                if (!File::exists($targetPath)) {
-                    throw new \Exception("Target file was not created after copy");
-                }
-                
-                // Update product with image path
-                $product->update(['image' => $imagePath]);
-                $processed++;
-                
-            } catch (\Exception $e) {
-                // Log detailed error for debugging
-                $errorMsg = "Failed to copy image for {$sku}: " . $e->getMessage();
-                \Log::error($errorMsg, [
-                    'source' => $sourcePath,
-                    'target' => $targetPath,
-                    'sku' => $sku,
-                    'image_file' => $imageFile,
-                ]);
-                $this->command->error("✗ {$errorMsg}");
-                $errors++;
-            }
-        }
-
-        // Summary
-        if ($processed > 0) {
-            $this->command->info("✓ Assigned images to {$processed} products");
-        }
-        if ($skipped > 0) {
-            $this->command->warn("⚠ Skipped {$skipped} products (images not found or products missing)");
-        }
-        if ($errors > 0) {
-            $this->command->error("✗ {$errors} errors occurred while processing images");
-        }
-        
-        // If no images were processed and folder doesn't exist, provide helpful message
-        if ($processed === 0 && !File::exists($sourceFolder)) {
-            $this->command->warn("⚠ 'J Trading' folder not found at: {$sourceFolder}");
-            $this->command->warn("  Images will need to be uploaded manually or the folder needs to be present in deployment.");
-        }
     }
 
     /**
