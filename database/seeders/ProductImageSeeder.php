@@ -123,10 +123,21 @@ class ProductImageSeeder extends Seeder
                     throw new \Exception("Target file was not created at {$targetPath}");
                 }
                 
-                // Update product with image path (relative to storage/app/public)
-                $product->update(['image' => $imagePath]);
+                // Always update product with image path (relative to storage/app/public)
+                // This ensures products get the correct image even if they already have one
+                $oldImage = $product->image;
+                $product->image = $imagePath;
+                $product->save();
                 
-                $this->command->info("✓ Added image for {$product->name} (SKU: {$productSku})");
+                // If product had a different image before, delete the old one
+                if ($oldImage && $oldImage !== $imagePath && File::exists(storage_path('app/public/' . $oldImage))) {
+                    // Only delete if it's not one of our seeded images (has hash in name)
+                    if (!preg_match('/^[a-z0-9\-]+\.(jpg|jpeg|png|webp)$/i', basename($oldImage))) {
+                        File::delete(storage_path('app/public/' . $oldImage));
+                    }
+                }
+                
+                $this->command->info("✓ Added/Updated image for {$product->name} (SKU: {$productSku})");
                 $processed++;
                     
             } catch (\Exception $e) {
@@ -147,6 +158,13 @@ class ProductImageSeeder extends Seeder
         $this->command->warn("  ⚠ Skipped: {$skipped}");
         if ($errors > 0) {
             $this->command->error("  ✗ Errors: {$errors}");
+        }
+        
+        // Clear cache to ensure images are visible immediately
+        if ($processed > 0) {
+            $this->command->info("  Clearing application cache...");
+            \Artisan::call('cache:clear');
+            $this->command->info("  ✓ Cache cleared");
         }
     }
 }
