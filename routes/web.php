@@ -29,6 +29,11 @@ Route::post('weigh-ins-landing/{transaction}/mark-as-paid', [\App\Http\Controlle
 // Weigh-In Receipt Printing (no auth required - for weigh-ins landing page)
 Route::get('receipts/weigh-ins/{transaction}', [\App\Http\Controllers\ReceiptController::class, 'weighInReceipt'])->name('receipts.weigh-ins');
 
+// POS System (no auth required - uses PIN for checkout)
+Route::get('pos', [PosController::class, 'index'])->name('pos');
+Route::post('pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
+Route::get('pos/checkout/success/{sale}', [PosController::class, 'checkoutSuccess'])->name('pos.checkout.success');
+
 Route::get('welcome', function () {
     return Inertia::render('welcome');
 })->name('welcome');
@@ -45,12 +50,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('inventory-movements', [\App\Http\Controllers\ReportsController::class, 'inventoryMovements'])->name('inventory-movements');
         Route::get('weigh-ins', [\App\Http\Controllers\ReportsController::class, 'weighIns'])->name('weigh-ins');
     });
-    
-    Route::get('pos', [PosController::class, 'index'])->name('pos');
-
-    // Phase 3: POS Sales
-    Route::post('pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
-    Route::get('pos/checkout/success/{sale}', [PosController::class, 'checkoutSuccess'])->name('pos.checkout.success');
     
     // Sales Receipt Printing (ESC/POS) - requires auth
     Route::get('receipts/sales/{sale}', [\App\Http\Controllers\ReceiptController::class, 'salesReceipt'])->name('receipts.sales');
