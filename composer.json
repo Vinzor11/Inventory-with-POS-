@@ -53,6 +53,7 @@
             "@php artisan db:seed --class=Database\\Seeders\\ProductSeeder --force",
             "@php artisan db:seed --class=Database\\Seeders\\AgriculturalProductsSeeder --force",
             "@php artisan storage:link",
+            "@php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force",
             "@php artisan config:cache",
             "@php artisan route:cache",
             "@php artisan view:cache",

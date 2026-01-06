@@ -106,25 +106,16 @@ class ProductImageSeeder extends Seeder
             $targetPath = $targetFolder . DIRECTORY_SEPARATOR . $targetFilename;
             $imagePath = 'products/' . $targetFilename;
 
-            // Skip if product already has the correct image path and file exists
-            if ($product->image === $imagePath && File::exists($targetPath)) {
-                $skipped++;
-                continue;
-            }
-
-            // Copy file to storage
+            // Copy file to storage (always copy since Railway filesystem is ephemeral)
             try {
-                // Only copy if target file doesn't exist
+                // Copy the file (overwrite if exists)
+                if (!File::copy($sourcePath, $targetPath)) {
+                    throw new \Exception("Failed to copy file from {$sourcePath} to {$targetPath}");
+                }
+                
+                // Verify the file was copied successfully
                 if (!File::exists($targetPath)) {
-                    // Copy the file
-                    if (!File::copy($sourcePath, $targetPath)) {
-                        throw new \Exception("Failed to copy file from {$sourcePath} to {$targetPath}");
-                    }
-                    
-                    // Verify the file was copied successfully
-                    if (!File::exists($targetPath)) {
-                        throw new \Exception("Target file was not created at {$targetPath}");
-                    }
+                    throw new \Exception("Target file was not created at {$targetPath}");
                 }
                 
                 // Update product with image path only if it's different
@@ -132,7 +123,7 @@ class ProductImageSeeder extends Seeder
                     $product->update(['image' => $imagePath]);
                 }
                 
-                $this->command->info("✓ Image set for {$product->name} (SKU: {$productSku})");
+                $this->command->info("✓ Image copied for {$product->name} (SKU: {$productSku})");
                 $processed++;
                     
             } catch (\Exception $e) {
