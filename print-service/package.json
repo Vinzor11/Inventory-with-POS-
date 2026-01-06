@@ -1,0 +1,14 @@
+{
+  "name": "hims-print-service",
+  "version": "1.0.0",
+  "description": "Local print service for HIMS thermal receipt printing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}
+
