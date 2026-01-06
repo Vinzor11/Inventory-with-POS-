@@ -19,6 +19,7 @@ class ProductImageSeeder extends Seeder
     {
         // Mapping of image filenames to product SKUs
         $imageMapping = [
+            // Hardware products
             'CWN.JPEG' => 'CWN',
             'umbrella-nails.png' => 'UMB-NAIL',
             'tie wire.jpg' => 'TIE-WIRE',
@@ -37,18 +38,33 @@ class ProductImageSeeder extends Seeder
             'gravel.jpg' => 'GRAVEL',
             'grava.jpg' => 'GRAVA',
             'pvp pipe.jpg' => 'PVC-PIPE',
+            // Agricultural products
+            'copra cooked.jpg' => 'COOKED-COPRA',
+            'copra uncooked.jpg' => 'UNCOOKED-COPRA',
+            'coconut.jpg' => 'COCONUT',
         ];
 
         $sourceFolder = base_path('J Trading');
         $targetFolder = storage_path('app/public/products');
         $publicStorageLink = public_path('storage');
 
+        $this->command->info("ProductImageSeeder starting...");
+        $this->command->info("Source folder: {$sourceFolder}");
+        $this->command->info("Target folder: {$targetFolder}");
+        
         // Check if source folder exists
         if (!File::exists($sourceFolder)) {
-            $this->command->warn("⚠ 'J Trading' folder not found at: {$sourceFolder}");
-            $this->command->warn("  Skipping image seeding. Images will not be added to products.");
+            $this->command->error("✗ 'J Trading' folder not found at: {$sourceFolder}");
+            $this->command->error("  Listing base_path contents:");
+            $basePath = base_path();
+            $dirs = File::directories($basePath);
+            foreach ($dirs as $dir) {
+                $this->command->info("  - " . basename($dir));
+            }
             return;
         }
+        
+        $this->command->info("✓ Source folder exists");
 
         // Ensure storage/app/public directory exists
         $publicStoragePath = storage_path('app/public');
