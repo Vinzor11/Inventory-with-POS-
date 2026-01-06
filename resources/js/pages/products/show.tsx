@@ -10,6 +10,7 @@ import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
+import { ProductImage } from '@/components/product-image';
 
 interface ProductCategory {
     id: number;
@@ -181,18 +182,13 @@ export default function ProductsShow({ product }: ProductsShowProps) {
                         {/* Product Image */}
                         <div className="rounded-lg border border-sidebar-border/70 p-4 dark:border-sidebar-border">
                             <h3 className="text-lg font-semibold mb-3">Product Image</h3>
-                            <div className="w-full aspect-square max-w-[200px] rounded-lg bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                                {product.image ? (
-                                    <img
-                                        src={`/storage/${product.image}`}
-                                        alt={product.name}
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                        <Package className="h-16 w-16 text-gray-400" />
-                                    </div>
-                                )}
+                            <div className="w-full aspect-square max-w-[200px] rounded-lg overflow-hidden">
+                                <ProductImage
+                                    src={product.image}
+                                    alt={product.name}
+                                    className="w-full h-full object-cover"
+                                    fallbackClassName="w-full h-full"
+                                />
                             </div>
                         </div>
 

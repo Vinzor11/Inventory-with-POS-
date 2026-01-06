@@ -10,6 +10,7 @@ import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
 import { ProductFormModal } from '@/components/product-form-modal';
+import { ProductImage } from '@/components/product-image';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -245,19 +246,11 @@ export default function ProductsIndex({ products, categories, filters }: Product
                                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                             <div className="flex items-center gap-3">
                                                 {/* Product Image */}
-                                                <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex-shrink-0 overflow-hidden">
-                                                    {product.image ? (
-                                                        <img
-                                                            src={`/storage/${product.image}`}
-                                                            alt={product.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center">
-                                                            <Package className="h-5 w-5 text-gray-400" />
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <ProductImage
+                                                    src={product.image}
+                                                    alt={product.name}
+                                                    className="w-10 h-10 rounded-lg object-cover"
+                                                />
                                                 <div>
                                                     <div className="font-medium">{product.name}</div>
                                                     {product.brand && (

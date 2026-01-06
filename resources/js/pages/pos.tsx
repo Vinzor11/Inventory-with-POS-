@@ -10,6 +10,7 @@ import { Home, Package, ShoppingCart, Search, Plus, Minus, X, CreditCard, LogIn,
 import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
 import { type SharedData } from '@/types';
+import { ProductImage } from '@/components/product-image';
 
 interface ProductCategory {
     id: number;
@@ -445,16 +446,12 @@ export default function Pos({ categories, products }: PosProps) {
                                             >
                                                 {/* Image Section - Aspect ratio container for consistent sizing */}
                                                 <div className="aspect-square bg-slate-100 rounded-t-lg flex items-center justify-center relative overflow-hidden">
-                                                    {product.image ? (
-                                                        <img
-                                                            src={`/storage/${product.image}`}
-                                                            alt={product.name}
-                                                            className="absolute inset-0 w-full h-full object-cover"
-                                                            loading="lazy"
-                                                        />
-                                                    ) : (
-                                                        <Package className="h-16 w-16 text-slate-400" />
-                                                    )}
+                                                    <ProductImage
+                                                        src={product.image}
+                                                        alt={product.name}
+                                                        className="absolute inset-0 w-full h-full object-cover"
+                                                        fallbackClassName="absolute inset-0"
+                                                    />
                                                     {isOutOfStock && (
                                                         <div className="absolute inset-0 bg-red-50 bg-opacity-80 flex items-center justify-center z-10">
                                                             <div className="text-center">
@@ -537,15 +534,12 @@ export default function Pos({ categories, products }: PosProps) {
                                             </button>
                                             <div className="flex gap-4 pr-8">
                                                 <div className="w-12 h-12 bg-slate-200 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                                    {item.image ? (
-                                                        <img
-                                                            src={`/storage/${item.image}`}
-                                                            alt={item.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <Package className="h-6 w-6 text-slate-400" />
-                                                    )}
+                                                    <ProductImage
+                                                        src={item.image}
+                                                        alt={item.name}
+                                                        className="w-full h-full object-cover"
+                                                        fallbackClassName="w-full h-full"
+                                                    />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <h4 className="font-medium text-sm text-slate-900 truncate mb-1">{item.name}</h4>
@@ -860,15 +854,12 @@ export default function Pos({ categories, products }: PosProps) {
                                                 </button>
                                                 <div className="flex gap-3 sm:gap-4 pr-8 sm:pr-10">
                                                     <div className="w-12 h-12 sm:w-16 sm:h-16 bg-slate-200 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                                        {item.image ? (
-                                                            <img
-                                                                src={`/storage/${item.image}`}
-                                                                alt={item.name}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <Package className="h-6 w-6 sm:h-8 sm:w-8 text-slate-400" />
-                                                        )}
+                                                        <ProductImage
+                                                            src={item.image}
+                                                            alt={item.name}
+                                                            className="w-full h-full object-cover"
+                                                            fallbackClassName="w-full h-full"
+                                                        />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <h4 className="font-medium text-sm text-slate-900 truncate mb-1">{item.name}</h4>

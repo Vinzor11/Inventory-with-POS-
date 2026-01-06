@@ -11,6 +11,7 @@ import { toast } from '@/lib/toast';
 import { Toaster } from '@/components/ui/toaster';
 import { formatCurrency } from '@/lib/format-currency';
 import { type SharedData } from '@/types';
+import { ProductImage } from '@/components/product-image';
 
 interface ProductInfo {
     id: number;
@@ -434,11 +435,11 @@ export default function WeighInsLanding({ prices, products }: WeighInsLandingPro
                                             {/* Image Section - Square aspect ratio */}
                                             <div className={`aspect-square ${category.color} rounded-t-lg flex items-center justify-center relative overflow-hidden`}>
                                                 {product?.image ? (
-                                                    <img
-                                                        src={`/storage/${product.image}`}
+                                                    <ProductImage
+                                                        src={product.image}
                                                         alt={category.label}
                                                         className="absolute inset-0 w-full h-full object-cover"
-                                                        loading="lazy"
+                                                        fallbackClassName="absolute inset-0 flex items-center justify-center"
                                                     />
                                                 ) : (
                                                     <Icon className="h-16 w-16" />
