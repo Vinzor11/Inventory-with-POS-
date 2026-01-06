@@ -8,9 +8,33 @@ use App\Models\ProductVariant;
 use App\Models\Inventory;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 
 class ProductSeeder extends Seeder
 {
+    /**
+     * Image mapping from filenames to product SKUs
+     */
+    private array $imageMapping = [
+        'CWN' => 'CWN.JPEG',
+        'UMB-NAIL' => 'umbrella-nails.png',
+        'TIE-WIRE' => 'tie wire.jpg',
+        'PALA' => 'shovel.webp',
+        'VULCASEAL' => 'vulcaseal.webp',
+        'YERO' => 'yero.webp',
+        'YERO-COLOR' => 'yero with color.jpg',
+        'PLAIN-SHEET' => 'plain sheet.jpeg',
+        'STEEL-BAR' => 'steel bar.jpg',
+        'MARINE-PLY' => 'marine plywood.jpg',
+        'ORD-PLY' => 'ordinary plywood.webp',
+        'COCO-LUMBER' => 'cocolumber.jpg',
+        'CEMENT' => 'Apo.jpg',
+        'SAND' => 'sand.jpeg',
+        'GRAVEL' => 'gravel.jpg',
+        'GRAVA' => 'grava.jpg',
+        'PVC-PIPE' => 'pvp pipe.jpg',
+    ];
+
     /**
      * Run the database seeds.
      * Seeds all hardware products for Joshua Trading
@@ -19,6 +43,9 @@ class ProductSeeder extends Seeder
     {
         // Delete existing non-agricultural products
         $this->cleanExistingProducts();
+        
+        // Prepare image storage directory
+        $this->prepareImageStorage();
 
         // Create categories
         $hardwareCategory = ProductCategory::firstOrCreate(
@@ -489,6 +516,9 @@ class ProductSeeder extends Seeder
             'unit_price' => 400.00,
         ]);
 
+        // Assign images to all products
+        $this->assignImagesToProducts();
+        
         $this->command->info('✓ Product seeder completed - ' . Product::count() . ' products created');
     }
 
@@ -505,6 +535,82 @@ class ProductSeeder extends Seeder
         ]);
 
         return $variant;
+    }
+
+    /**
+     * Prepare image storage directory
+     */
+    private function prepareImageStorage(): void
+    {
+        $targetFolder = storage_path('app/public/products');
+        
+        // Ensure storage/app/public directory exists
+        $publicStoragePath = storage_path('app/public');
+        if (!File::exists($publicStoragePath)) {
+            File::makeDirectory($publicStoragePath, 0755, true);
+        }
+
+        // Create target directory if it doesn't exist
+        if (!File::exists($targetFolder)) {
+            File::makeDirectory($targetFolder, 0755, true);
+        }
+    }
+
+    /**
+     * Assign images to products by copying from J Trading folder
+     */
+    private function assignImagesToProducts(): void
+    {
+        $sourceFolder = base_path('J Trading');
+        $targetFolder = storage_path('app/public/products');
+
+        // Check if source folder exists
+        if (!File::exists($sourceFolder)) {
+            $this->command->warn("⚠ 'J Trading' folder not found - skipping image assignment");
+            return;
+        }
+
+        $processed = 0;
+
+        foreach ($this->imageMapping as $sku => $imageFile) {
+            $sourcePath = $sourceFolder . DIRECTORY_SEPARATOR . $imageFile;
+            
+            // Check if source file exists
+            if (!File::exists($sourcePath)) {
+                continue;
+            }
+
+            // Find product by SKU
+            $product = Product::where('sku', $sku)->first();
+            if (!$product) {
+                continue;
+            }
+
+            // Get file extension and create target filename
+            $extension = pathinfo($imageFile, PATHINFO_EXTENSION);
+            $targetFilename = strtolower($sku) . '.' . strtolower($extension);
+            $targetPath = $targetFolder . DIRECTORY_SEPARATOR . $targetFilename;
+            $imagePath = 'products/' . $targetFilename;
+
+            try {
+                // Copy the file
+                if (File::exists($targetPath)) {
+                    File::delete($targetPath);
+                }
+                File::copy($sourcePath, $targetPath);
+                
+                // Update product with image path
+                $product->update(['image' => $imagePath]);
+                $processed++;
+            } catch (\Exception $e) {
+                // Log but continue
+                \Log::warning("Failed to copy image for {$sku}: " . $e->getMessage());
+            }
+        }
+
+        if ($processed > 0) {
+            $this->command->info("✓ Assigned images to {$processed} products");
+        }
     }
 
     /**
