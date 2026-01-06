@@ -16,6 +16,8 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $driver = DB::getDriverName();
+        
         Schema::table('deliveries', function (Blueprint $table) {
             // Modify delivered_by_user_id to allow NULL
             $table->foreignId('delivered_by_user_id')->nullable()->change();
@@ -25,8 +27,19 @@ return new class extends Migration
         });
 
         // Update status enum to include 'partial'
-        // Note: MySQL doesn't support modifying enum directly, so we need to use raw SQL
-        DB::statement("ALTER TABLE deliveries MODIFY COLUMN status ENUM('pending', 'partial', 'delivered') DEFAULT 'pending'");
+        if ($driver === 'sqlite') {
+            // SQLite: Drop and recreate the column with new enum values
+            Schema::table('deliveries', function (Blueprint $table) {
+                $table->dropColumn('status');
+            });
+            
+            Schema::table('deliveries', function (Blueprint $table) {
+                $table->enum('status', ['pending', 'partial', 'delivered'])->default('pending')->after('delivered_at');
+            });
+        } else {
+            // MySQL/MariaDB: Use MODIFY COLUMN
+            DB::statement("ALTER TABLE deliveries MODIFY COLUMN status ENUM('pending', 'partial', 'delivered') DEFAULT 'pending'");
+        }
     }
 
     /**
@@ -34,8 +47,26 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Revert status enum
-        DB::statement("ALTER TABLE deliveries MODIFY COLUMN status ENUM('pending', 'delivered') DEFAULT 'pending'");
+        $driver = DB::getDriverName();
+        
+        // Revert status enum - first update any 'partial' status to 'pending'
+        DB::table('deliveries')
+            ->where('status', 'partial')
+            ->update(['status' => 'pending']);
+        
+        if ($driver === 'sqlite') {
+            // SQLite: Drop and recreate the column with old enum values
+            Schema::table('deliveries', function (Blueprint $table) {
+                $table->dropColumn('status');
+            });
+            
+            Schema::table('deliveries', function (Blueprint $table) {
+                $table->enum('status', ['pending', 'delivered'])->default('pending')->after('delivered_at');
+            });
+        } else {
+            // MySQL/MariaDB
+            DB::statement("ALTER TABLE deliveries MODIFY COLUMN status ENUM('pending', 'delivered') DEFAULT 'pending'");
+        }
         
         Schema::table('deliveries', function (Blueprint $table) {
             // Revert to NOT NULL (but this might fail if there are NULL values)
