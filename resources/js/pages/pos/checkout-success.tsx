@@ -1,9 +1,9 @@
 import { Head, usePage } from '@inertiajs/react';
 import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, ShoppingCart, Printer, Share2 } from 'lucide-react';
+import { CheckCircle2, ShoppingCart, Share2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { fetchSalesReceiptText, shareReceipt, shareReceiptAsFile, canShare, autoPrintReceipt } from '@/lib/receipt-print';
+import { shareReceiptAsFile, canShare } from '@/lib/receipt-print';
 import { useState, useEffect } from 'react';
 
 interface User {
@@ -95,29 +95,14 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
     const handlePrintClick = async () => {
         setIsPrinting(true);
         try {
-            const text = await fetchSalesReceiptText(sale.id, 80);
-            await autoPrintReceipt(text);
+            // Share as .prn file for RawBT (preserves ESC/POS commands for bold text)
+            const shared = await shareReceiptAsFile(sale.id, 80);
+            if (!shared) {
+                alert('Failed to share receipt. Please try again.');
+            }
         } catch (error) {
             console.error('Failed to print receipt:', error);
             alert('Failed to print receipt. Please try again.');
-        } finally {
-            setIsPrinting(false);
-        }
-    };
-
-    const handleShareClick = async () => {
-        setIsPrinting(true);
-        try {
-            // Try sharing as file first (preserves ESC/POS commands for bold text)
-            const shared = await shareReceiptAsFile(sale.id, 80);
-            if (!shared) {
-                // Fallback to plain text
-                const text = await fetchSalesReceiptText(sale.id, 80);
-                await shareReceipt(text);
-            }
-        } catch (error) {
-            console.error('Failed to share receipt:', error);
-            alert('Failed to share receipt. Please try again.');
         } finally {
             setIsPrinting(false);
         }
@@ -361,30 +346,17 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
 
                     {/* Actions */}
                     <div className="flex gap-3">
-                        {/* Only show print buttons if sale is not refunded or voided */}
-                        {(sale.status !== 'REFUNDED' && sale.status !== 'VOIDED' && sale.payment_status !== 'refunded') && (
-                            <>
-                                {showShareButton && (
-                                    <Button
-                                        variant="outline"
-                                        className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
-                                        onClick={handleShareClick}
-                                        disabled={isPrinting}
-                                    >
-                                        <Share2 className="h-4 w-4 mr-2" />
-                                        {isPrinting ? 'Printing...' : 'Print (RawBT)'}
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="outline"
-                                    className="flex-1"
-                                    onClick={handlePrintClick}
-                                    disabled={isPrinting}
-                                >
-                                    <Printer className="h-4 w-4 mr-2" />
-                                    {isPrinting ? 'Printing...' : 'Print'}
-                                </Button>
-                            </>
+                        {/* Only show print button if sale is not refunded or voided */}
+                        {(sale.status !== 'REFUNDED' && sale.status !== 'VOIDED' && sale.payment_status !== 'refunded') && showShareButton && (
+                            <Button
+                                variant="outline"
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                onClick={handlePrintClick}
+                                disabled={isPrinting}
+                            >
+                                <Share2 className="h-4 w-4 mr-2" />
+                                {isPrinting ? 'Printing...' : 'Print (RawBT)'}
+                            </Button>
                         )}
                         <Button
                             className="flex-1 bg-blue-600 hover:bg-blue-700"

@@ -4,15 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Pagination } from '@/components/ui/pagination';
 import { RowsPerPageSelector, PER_PAGE_OPTIONS } from '@/components/ui/rows-per-page-selector';
-import { Eye, XCircle, Search, Receipt, Truck, RefreshCw, Printer } from 'lucide-react';
+import { Eye, XCircle, Search, Receipt, Truck, RefreshCw, Share2 } from 'lucide-react';
 import { useDebounce } from '@/hooks/use-debounce';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router, useForm } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchSalesReceiptText, shareReceipt, canShare, printViaBrowser } from '@/lib/receipt-print';
+import { shareReceiptAsFile, canShare } from '@/lib/receipt-print';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -117,11 +116,14 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
 
     const [processing, setProcessing] = useState(false);
     
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+    const [showShareButton, setShowShareButton] = useState(false);
+
+    useEffect(() => {
+        setShowShareButton(canShare());
+    }, []);
 
     const triggerFetch = useCallback((params: any = {}) => {
         const status = params.status !== undefined ? params.status : statusFilter;
@@ -378,25 +380,18 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
         setSelectedSaleId(saleId);
         setIsLoadingReceipt(true);
         try {
-            const text = await fetchSalesReceiptText(saleId);
-            // Auto-share to RawBT if available, otherwise use browser print
-            if (canShare()) {
-                await shareReceipt(text);
-            } else {
-                // Fall back to browser print preview
-                setReceiptText(text);
-                setShowReceiptPreview(true);
+            // Share as .prn file for RawBT (preserves ESC/POS commands for bold text)
+            const shared = await shareReceiptAsFile(saleId, 80);
+            if (!shared) {
+                toast.error('Failed to share receipt. Please try again.');
             }
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
+            console.error('Failed to print receipt:', error);
+            toast.error('Failed to print receipt.');
         } finally {
             setIsLoadingReceipt(false);
+            setSelectedSaleId(null);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        // Use browser print for non-Android devices
-        printViaBrowser(receiptText);
     };
 
     return (
@@ -584,17 +579,17 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    {/* Only show print button if sale is not refunded or voided */}
-                                                    {(sale.status !== 'REFUNDED' && sale.status !== 'VOIDED' && sale.payment_status !== 'REFUNDED') && (
+                                                    {/* Only show print button if sale is not refunded or voided and share is available */}
+                                                    {showShareButton && (sale.status !== 'REFUNDED' && sale.status !== 'VOIDED' && sale.payment_status !== 'REFUNDED') && (
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            className="h-8 w-8 p-0"
-                                                            title="Print receipt"
+                                                            className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                                                            title="Print (RawBT)"
                                                             onClick={() => handlePrintReceipt(sale.id)}
                                                             disabled={isLoadingReceipt && selectedSaleId === sale.id}
                                                         >
-                                                            <Printer className="h-4 w-4" />
+                                                            <Share2 className="h-4 w-4" />
                                                         </Button>
                                                     )}
                                                     <Button
@@ -683,15 +678,6 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
                     )}
                 </div>
             </div>
-            
-            {/* Receipt Preview Dialog */}
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Sales Receipt Preview"
-            />
         </AppLayout>
     );
 }

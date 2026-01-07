@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { RowsPerPageSelector, PER_PAGE_OPTIONS } from '@/components/ui/rows-per-page-selector';
-import { Eye, Plus, Check, ChevronDown, ChevronRight, Printer } from 'lucide-react';
+import { Eye, Plus, Check, ChevronDown, ChevronRight, Share2 } from 'lucide-react';
 import { useDebounce } from '@/hooks/use-debounce';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
@@ -11,8 +11,7 @@ import { router } from '@inertiajs/react';
 import { ManagePricesModal } from '@/components/manage-prices-modal';
 import { NewWeighInModal } from '@/components/new-weigh-in-modal';
 import { formatCurrency } from '@/lib/format-currency';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchWeighInReceiptText, printWeighInReceipt } from '@/lib/receipt-print';
+import { shareWeighInReceiptAsFile, canShare } from '@/lib/receipt-print';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Weigh-Ins', href: '/weigh-ins' }];
 
@@ -80,12 +79,14 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
     const [isNewWeighInModalOpen, setIsNewWeighInModalOpen] = useState(false);
     const [expandedTransactions, setExpandedTransactions] = useState<Set<number>>(new Set());
     
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
-    const [isPrinting, setIsPrinting] = useState(false);
     const [selectedTransactionId, setSelectedTransactionId] = useState<number | null>(null);
+    const [showShareButton, setShowShareButton] = useState(false);
+
+    useEffect(() => {
+        setShowShareButton(canShare());
+    }, []);
 
     const triggerFetch = useCallback((params: any = {}) => {
         router.get('/weigh-ins', {
@@ -133,27 +134,16 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
         setSelectedTransactionId(transactionId);
         setIsLoadingReceipt(true);
         try {
-            const text = await fetchWeighInReceiptText(transactionId);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Share as .prn file for RawBT (preserves ESC/POS commands for bold text)
+            const shared = await shareWeighInReceiptAsFile(transactionId, 80);
+            if (!shared) {
+                console.error('Failed to share receipt');
+            }
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
+            console.error('Failed to print receipt:', error);
         } finally {
             setIsLoadingReceipt(false);
-        }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!selectedTransactionId) return;
-        
-        setIsPrinting(true);
-        try {
-            await printWeighInReceipt(selectedTransactionId);
-            setShowReceiptPreview(false);
-        } catch (error) {
-            console.error('Print failed:', error);
-        } finally {
-            setIsPrinting(false);
+            setSelectedTransactionId(null);
         }
     };
 
@@ -250,16 +240,18 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
                                                             <td className="px-4 py-3 text-sm">{new Date(transaction.weighed_at).toLocaleDateString()}</td>
                                                             <td className="px-4 py-3 text-sm">
                                                                 <div className="flex items-center gap-2">
-                                                                    <Button 
-                                                                        variant="ghost" 
-                                                                        size="sm" 
-                                                                        className="h-8 w-8 p-0" 
-                                                                        title="Print receipt"
-                                                                        onClick={() => handlePrintReceipt(transaction.id)}
-                                                                        disabled={isLoadingReceipt && selectedTransactionId === transaction.id}
-                                                                    >
-                                                                        <Printer className="h-4 w-4" />
-                                                                    </Button>
+                                                                    {showShareButton && (
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            size="sm" 
+                                                                            className="h-8 w-8 p-0 text-green-600 hover:text-green-700" 
+                                                                            title="Print (RawBT)"
+                                                                            onClick={() => handlePrintReceipt(transaction.id)}
+                                                                            disabled={isLoadingReceipt && selectedTransactionId === transaction.id}
+                                                                        >
+                                                                            <Share2 className="h-4 w-4" />
+                                                                        </Button>
+                                                                    )}
                                                                     {transaction.status === 'unpaid' && (
                                                                         <Button 
                                                                             variant="ghost" 
@@ -393,14 +385,6 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
                 onSuccess={() => {
                     router.reload();
                 }}
-            />
-
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Weigh-In Receipt Preview"
             />
         </AppLayout>
     );

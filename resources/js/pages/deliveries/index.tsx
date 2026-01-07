@@ -3,13 +3,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { RowsPerPageSelector, PER_PAGE_OPTIONS } from '@/components/ui/rows-per-page-selector';
-import { Eye, Printer } from 'lucide-react';
+import { Eye, Share2 } from 'lucide-react';
 import { useDebounce } from '@/hooks/use-debounce';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchDeliveryReceiptText, printDeliveryReceipt } from '@/lib/receipt-print';
+import { shareDeliveryReceiptAsFile, canShare } from '@/lib/receipt-print';
 import { toast } from '@/lib/toast';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -97,11 +96,14 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
         triggerFetch({ page });
     };
 
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
+    const [showShareButton, setShowShareButton] = useState(false);
+
+    useEffect(() => {
+        setShowShareButton(canShare());
+    }, []);
 
     const handlePrintReceipt = async (deliveryId: number | null | undefined) => {
         if (!deliveryId) {
@@ -112,20 +114,18 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
         setSelectedDeliveryId(deliveryId);
         setIsLoadingReceipt(true);
         try {
-            const text = await fetchDeliveryReceiptText(deliveryId);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Share as .prn file for RawBT (preserves ESC/POS commands for bold text)
+            const shared = await shareDeliveryReceiptAsFile(deliveryId, 80);
+            if (!shared) {
+                toast.error('Failed to share receipt');
+            }
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
-            toast.error('Failed to load receipt');
+            console.error('Failed to print receipt:', error);
+            toast.error('Failed to print receipt');
         } finally {
             setIsLoadingReceipt(false);
+            setSelectedDeliveryId(null);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!selectedDeliveryId) return;
-        await printDeliveryReceipt(selectedDeliveryId);
     };
 
     return (
@@ -213,16 +213,18 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
                                                 </td>
                                                 <td className="px-4 py-3 text-sm">
                                                     <div className="flex items-center gap-2">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="h-8 w-8 p-0"
-                                                            title="Print receipt"
-                                                            onClick={() => handlePrintReceipt(saleDelivery.latest_delivery_id)}
-                                                            disabled={isLoadingReceipt && selectedDeliveryId === saleDelivery.latest_delivery_id || !saleDelivery.latest_delivery_id}
-                                                        >
-                                                            <Printer className="h-4 w-4" />
-                                                        </Button>
+                                                        {showShareButton && saleDelivery.latest_delivery_id && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                                                                title="Print (RawBT)"
+                                                                onClick={() => handlePrintReceipt(saleDelivery.latest_delivery_id)}
+                                                                disabled={isLoadingReceipt && selectedDeliveryId === saleDelivery.latest_delivery_id}
+                                                            >
+                                                                <Share2 className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
@@ -265,15 +267,6 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
                     )}
                 </div>
             </div>
-            
-            {/* Receipt Preview Dialog */}
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Delivery Receipt Preview"
-            />
         </AppLayout>
     );
 }

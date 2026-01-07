@@ -1,11 +1,10 @@
 import { Head, usePage } from '@inertiajs/react';
 import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Truck, Printer } from 'lucide-react';
+import { CheckCircle2, Truck, Share2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { printDeliveryReceipt, fetchDeliveryReceiptText } from '@/lib/receipt-print';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { useState } from 'react';
+import { shareDeliveryReceiptAsFile, canShare } from '@/lib/receipt-print';
+import { useState, useEffect } from 'react';
 
 interface User {
     id: number;
@@ -69,30 +68,30 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
     const { name: storeName } = usePage().props as { name?: string };
     const storeDisplayName = storeName || 'STORE NAME';
     const [isPrinting, setIsPrinting] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState<string>('');
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    const [showShareButton, setShowShareButton] = useState(false);
+
+    useEffect(() => {
+        setShowShareButton(canShare());
+    }, []);
     
     const handleNewDelivery = () => {
         router.visit('/');
     };
 
     const handlePrintClick = async () => {
-        setIsLoadingPreview(true);
+        setIsPrinting(true);
         try {
-            const text = await fetchDeliveryReceiptText(delivery.id, 80);
-            setReceiptText(text);
-            setShowPreview(true);
+            // Share as .prn file for RawBT (preserves ESC/POS commands for bold text)
+            const shared = await shareDeliveryReceiptAsFile(delivery.id, 80);
+            if (!shared) {
+                alert('Failed to share receipt. Please try again.');
+            }
         } catch (error) {
-            console.error('Failed to load receipt preview:', error);
-            alert('Failed to load receipt preview. Please try again.');
+            console.error('Failed to print receipt:', error);
+            alert('Failed to print receipt. Please try again.');
         } finally {
-            setIsLoadingPreview(false);
+            setIsPrinting(false);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        await printDeliveryReceipt(delivery.id, { width: 80 });
     };
 
     const formatTransactionTime = (dateString: string) => {
@@ -220,15 +219,17 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
 
                     {/* Actions */}
                     <div className="flex gap-3">
-                        <Button
-                            variant="outline"
-                            className="flex-1"
-                            onClick={handlePrintClick}
-                            disabled={isLoadingPreview || isPrinting}
-                        >
-                            <Printer className="h-4 w-4 mr-2" />
-                            {isLoadingPreview ? 'Loading Preview...' : isPrinting ? 'Printing...' : 'Print Delivery Receipt'}
-                        </Button>
+                        {showShareButton && (
+                            <Button
+                                variant="outline"
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                onClick={handlePrintClick}
+                                disabled={isPrinting}
+                            >
+                                <Share2 className="h-4 w-4 mr-2" />
+                                {isPrinting ? 'Printing...' : 'Print (RawBT)'}
+                            </Button>
+                        )}
                         <Button
                             className="flex-1 bg-blue-600 hover:bg-blue-700"
                             onClick={handleNewDelivery}
@@ -239,15 +240,6 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
                     </div>
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog */}
-            <ReceiptPreviewDialog
-                isOpen={showPreview}
-                onClose={() => setShowPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Delivery Receipt Preview"
-            />
         </>
     );
 }
