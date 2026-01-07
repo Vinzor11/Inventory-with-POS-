@@ -21,6 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // Exclude print API routes from CSRF verification (for tablet printing)
+        $middleware->validateCsrfTokens(except: [
+            'api/print/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
