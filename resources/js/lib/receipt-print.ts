@@ -102,15 +102,13 @@ export async function fetchReceiptText(
  * Fetch sales receipt text for preview
  * @param saleId - The sale ID
  * @param width - Printer width (58 or 80mm)
- * @param plain - If true, returns plain text without ESC/POS commands (for sharing/RawBT)
+ * Note: Returns ESC/POS format by default (same as delivery receipt) for RawBT bold support
  */
 export async function fetchSalesReceiptText(
     saleId: number,
-    width: 58 | 80 = 80,
-    plain: boolean = true
+    width: 58 | 80 = 80
 ): Promise<string> {
-    const format = plain ? 'plain' : 'escpos';
-    const url = `/receipts/sales/${saleId}?width=${width}&format=${format}`;
+    const url = `/receipts/sales/${saleId}?width=${width}`;
     return fetchReceiptText(url);
 }
 

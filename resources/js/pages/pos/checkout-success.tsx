@@ -3,8 +3,7 @@ import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, ShoppingCart, Printer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { fetchSalesReceiptText, printSalesReceipt } from '@/lib/receipt-print';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
+import { fetchSalesReceiptText, shareReceipt } from '@/lib/receipt-print';
 import { useState } from 'react';
 
 interface User {
@@ -83,30 +82,24 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
     const { name: storeName } = usePage().props as { name?: string };
     const storeDisplayName = storeName || 'STORE NAME';
     const [isPrinting, setIsPrinting] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState<string>('');
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     
     const handleNewOrder = () => {
         router.visit('/pos');
     };
 
     const handlePrintClick = async () => {
-        setIsLoadingPreview(true);
+        setIsPrinting(true);
         try {
+            // Fetch ESC/POS formatted receipt (same as delivery receipt - has bold commands)
             const text = await fetchSalesReceiptText(sale.id, 80);
-            setReceiptText(text);
-            setShowPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to load receipt preview:', error);
-            alert('Failed to load receipt preview. Please try again.');
+            console.error('Failed to print receipt:', error);
+            alert('Failed to print receipt. Please try again.');
         } finally {
-            setIsLoadingPreview(false);
+            setIsPrinting(false);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        await printSalesReceipt(sale.id, { width: 80 });
     };
 
     const formatTransactionTime = (dateString: string) => {
@@ -353,10 +346,10 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
                                 variant="outline"
                                 className="flex-1"
                                 onClick={handlePrintClick}
-                                disabled={isLoadingPreview || isPrinting}
+                                disabled={isPrinting}
                             >
                                 <Printer className="h-4 w-4 mr-2" />
-                                {isLoadingPreview ? 'Loading...' : isPrinting ? 'Printing...' : 'Print Receipt'}
+                                {isPrinting ? 'Printing...' : 'Print'}
                             </Button>
                         )}
                         <Button
@@ -369,15 +362,6 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
                     </div>
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showPreview}
-                onClose={() => setShowPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Sales Receipt Preview"
-            />
         </>
     );
 }
