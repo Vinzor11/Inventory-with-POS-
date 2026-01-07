@@ -426,32 +426,56 @@ function downloadReceipt(receiptText: string): void {
  * Returns plain text suitable for sharing or display
  */
 export function cleanReceiptText(receiptText: string): string {
-    return receiptText
+    // First pass: Remove all ESC/POS command sequences
+    // ESC commands start with \x1B (27) followed by command byte and optional parameters
+    // GS commands start with \x1D (29) followed by command byte and optional parameters
+    
+    let cleaned = receiptText
+        // Remove ESC @ (initialize printer) - \x1B\x40
+        .replace(/\x1B@/g, '')
+        .replace(/\x1B\x40/g, '')
+        
+        // Remove ESC 3 n (line spacing) - \x1B\x33 + 1 byte
+        .replace(/\x1B3./g, '')
+        .replace(/\x1B\x33./g, '')
+        
+        // Remove ESC a n (alignment) - \x1B\x61 + 1 byte  
+        .replace(/\x1Ba./g, '')
+        .replace(/\x1B\x61./g, '')
+        
+        // Remove ESC E n (bold) - \x1B\x45 + 1 byte
+        .replace(/\x1BE./g, '')
+        .replace(/\x1B\x45./g, '')
+        
+        // Remove ESC G n (double-strike) - \x1B\x47 + 1 byte
+        .replace(/\x1BG./g, '')
+        .replace(/\x1B\x47./g, '')
+        
+        // Remove GS ! n (character size) - \x1D\x21 + 1 byte
+        .replace(/\x1D!./g, '')
+        .replace(/\x1D\x21./g, '')
+        
+        // Remove GS V n (cut paper) - \x1D\x56 + 1 byte
+        .replace(/\x1DV./g, '')
+        .replace(/\x1D\x56./g, '')
+        
+        // Remove any remaining ESC sequences (ESC + any printable char + optional param)
+        .replace(/\x1B[\x20-\x7E][\x00-\xFF]?/g, '')
+        
+        // Remove any remaining GS sequences (GS + any printable char + optional param)
+        .replace(/\x1D[\x20-\x7E][\x00-\xFF]?/g, '')
+        
         // Remove ANSI escape sequences
         .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
-        // Remove ESC @ (initialize printer)
-        .replace(/\x1B\x40/g, '')
-        // Remove ESC 3 n (line spacing) - matches ESC 3 followed by any byte
-        .replace(/\x1B\x33[\x00-\xFF]/g, '')
-        // Remove GS V (cut paper) - various cut commands
-        .replace(/\x1D\x56[\x00-\xFF]/g, '')
-        .replace(/\x1DV[\x00-\xFF]/g, '')
-        // Remove ESC a (alignment)
-        .replace(/\x1B\x61[\x00-\xFF]/g, '')
-        .replace(/\x1Ba[\x00-\xFF]/g, '')
-        // Remove ESC E (bold on/off)
-        .replace(/\x1B\x45[\x00-\xFF]/g, '')
-        .replace(/\x1BE[\x00-\xFF]/g, '')
-        // Remove ESC G (double-strike on/off)
-        .replace(/\x1B\x47[\x00-\xFF]/g, '')
-        .replace(/\x1BG[\x00-\xFF]/g, '')
-        // Remove GS ! (character size)
-        .replace(/\x1D\x21[\x00-\xFF]/g, '')
-        .replace(/\x1D![\x00-\xFF]/g, '')
-        // Remove any remaining control characters except newline, tab, space
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        
+        // Remove any remaining control characters (except newline \x0A and carriage return \x0D)
+        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        
         // Remove carriage returns
-        .replace(/\r/g, '')
+        .replace(/\r/g, '');
+    
+    // Second pass: Clean up the text
+    return cleaned
         // Trim trailing whitespace from each line
         .split('\n')
         .map(line => line.trimEnd())
@@ -459,7 +483,9 @@ export function cleanReceiptText(receiptText: string): string {
         // Remove excessive blank lines at the end (keep max 2)
         .replace(/\n{4,}$/g, '\n\n')
         // Remove leading blank lines
-        .replace(/^\n+/, '');
+        .replace(/^\n+/, '')
+        // Remove any stray single characters at start (remnants of commands)
+        .replace(/^[a-zA-Z]{1,2}\s*\n/, '');
 }
 
 /**
