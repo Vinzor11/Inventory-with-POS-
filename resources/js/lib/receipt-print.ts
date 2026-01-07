@@ -70,7 +70,7 @@ export function getPrintSettings(): { method: PrintMethod; networkIP: string | n
 }
 
 /**
- * Fetch receipt text for preview
+ * Fetch receipt text (plain text format from backend)
  */
 export async function fetchReceiptText(
     url: string
@@ -79,7 +79,7 @@ export async function fetchReceiptText(
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                'Accept': 'text/plain, application/octet-stream',
+                'Accept': 'text/plain',
                 'X-Requested-With': 'XMLHttpRequest',
             },
             credentials: 'include',
@@ -89,29 +89,9 @@ export async function fetchReceiptText(
             throw new Error(`Failed to fetch receipt: ${response.statusText}`);
         }
 
-        // Get as text for preview (remove ESC/POS commands for display)
-        const buffer = await response.arrayBuffer();
-        const text = new TextDecoder('utf-8').decode(new Uint8Array(buffer));
-        
-        // Remove ESC/POS control sequences for preview (preserve spaces and newlines)
-        let cleanedText = text
-            .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') // Remove ANSI escape sequences
-            .replace(/\x1B\x40/g, '') // Remove ESC @ (initialize)
-            .replace(/\x1B\x33[\x00-\xFF]/g, '') // Remove ESC 3 n (line spacing)
-            .replace(/\x1D\x56\x00/g, '') // Remove GS V 0 (cut)
-            .replace(/\x1B\x61/g, '') // Remove ESC a (alignment)
-            .replace(/\x1B\x45\x01/g, '') // Remove ESC E 1 (Bold ON - 1B 45 01)
-            .replace(/\x1B\x45\x00/g, '') // Remove ESC E 0 (Bold OFF - 1B 45 00)
-            .replace(/\x1B\x47\x01/g, '') // Remove ESC G 1 (Double-Strike ON)
-            .replace(/\x1B\x47\x00/g, '') // Remove ESC G 0 (Double-Strike OFF)
-            .replace(/\x1D\x21\x11/g, '') // Remove GS ! 11 (Double width and height)
-            .replace(/\x1D\x21\x00/g, '') // Remove GS ! 00 (Normal size)
-            .replace(/[\x00-\x08\x0B-\x1C\x1E-\x1F\x7F]/g, ''); // Remove control chars but keep \n, \t, and space
-        
-        // Remove leading empty lines
-        cleanedText = cleanedText.replace(/^\n+/, '');
-        
-        return cleanedText;
+        // Plain text format - no cleaning needed
+        const text = await response.text();
+        return text;
     } catch (error) {
         console.error('Error fetching receipt text:', error);
         throw error;
@@ -520,6 +500,114 @@ export async function shareReceipt(receiptText: string): Promise<boolean> {
     }
     
     return false;
+}
+
+/**
+ * Fetch raw ESC/POS receipt data (with commands for bold, etc.)
+ */
+export async function fetchReceiptRaw(url: string): Promise<ArrayBuffer> {
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/octet-stream',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch receipt: ${response.statusText}`);
+    }
+
+    return response.arrayBuffer();
+}
+
+/**
+ * Share receipt as a file (for RawBT with ESC/POS commands)
+ * This preserves bold, large text, and other formatting
+ */
+export async function shareReceiptAsFile(
+    saleId: number,
+    width: 58 | 80 = 80
+): Promise<boolean> {
+    // Fetch raw ESC/POS data (with bold commands)
+    const url = `/receipts/sales/${saleId}?width=${width}&format=escpos`;
+    
+    try {
+        const rawData = await fetchReceiptRaw(url);
+        
+        // Create a file from the raw data
+        const blob = new Blob([rawData], { type: 'application/octet-stream' });
+        const file = new File([blob], `receipt-${saleId}.bin`, { type: 'application/octet-stream' });
+        
+        // Check if we can share files
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                title: 'Receipt',
+                files: [file],
+            });
+            return true;
+        }
+        
+        // Fallback: try sharing as text
+        const textDecoder = new TextDecoder('latin1');
+        const text = textDecoder.decode(rawData);
+        
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Receipt',
+                text: text,
+            });
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.warn('Share as file failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Share weigh-in receipt as a file (for RawBT with ESC/POS commands)
+ */
+export async function shareWeighInReceiptAsFile(
+    transactionId: number,
+    width: 58 | 80 = 80
+): Promise<boolean> {
+    const url = `/receipts/weigh-ins/${transactionId}?width=${width}&format=escpos`;
+    
+    try {
+        const rawData = await fetchReceiptRaw(url);
+        
+        const blob = new Blob([rawData], { type: 'application/octet-stream' });
+        const file = new File([blob], `weighin-${transactionId}.bin`, { type: 'application/octet-stream' });
+        
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                title: 'Weigh-In Receipt',
+                files: [file],
+            });
+            return true;
+        }
+        
+        // Fallback to text
+        const textDecoder = new TextDecoder('latin1');
+        const text = textDecoder.decode(rawData);
+        
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Weigh-In Receipt',
+                text: text,
+            });
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.warn('Share weigh-in as file failed:', error);
+        return false;
+    }
 }
 
 /**

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle2, Scale, Printer, Share2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
 import { useState, useEffect } from 'react';
-import { fetchWeighInReceiptText, shareReceipt, canShare } from '@/lib/receipt-print';
+import { fetchWeighInReceiptText, shareReceipt, shareWeighInReceiptAsFile, canShare } from '@/lib/receipt-print';
 
 interface User {
     id: number;
@@ -108,8 +108,13 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
         
         setIsPrinting(true);
         try {
-            const text = await fetchWeighInReceiptText(transactionId);
-            await shareReceipt(text);
+            // Try sharing as file first (preserves ESC/POS commands for bold text)
+            const shared = await shareWeighInReceiptAsFile(transactionId, 80);
+            if (!shared) {
+                // Fallback to plain text
+                const text = await fetchWeighInReceiptText(transactionId);
+                await shareReceipt(text);
+            }
         } catch (error) {
             console.error('Share failed:', error);
         } finally {

@@ -3,7 +3,7 @@ import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, ShoppingCart, Printer, Share2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { fetchSalesReceiptText, shareReceipt, canShare, autoPrintReceipt } from '@/lib/receipt-print';
+import { fetchSalesReceiptText, shareReceipt, shareReceiptAsFile, canShare, autoPrintReceipt } from '@/lib/receipt-print';
 import { useState, useEffect } from 'react';
 
 interface User {
@@ -108,8 +108,13 @@ export default function CheckoutSuccess({ sale, paymentSummary }: CheckoutSucces
     const handleShareClick = async () => {
         setIsPrinting(true);
         try {
-            const text = await fetchSalesReceiptText(sale.id, 80);
-            await shareReceipt(text);
+            // Try sharing as file first (preserves ESC/POS commands for bold text)
+            const shared = await shareReceiptAsFile(sale.id, 80);
+            if (!shared) {
+                // Fallback to plain text
+                const text = await fetchSalesReceiptText(sale.id, 80);
+                await shareReceipt(text);
+            }
         } catch (error) {
             console.error('Failed to share receipt:', error);
             alert('Failed to share receipt. Please try again.');
