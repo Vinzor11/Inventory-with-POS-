@@ -225,6 +225,14 @@ export default function PrinterSettings() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                                <Alert className="bg-amber-50 border-amber-200">
+                                    <AlertDescription className="text-amber-800">
+                                        <strong>Note:</strong> Network printing only works if your app server can reach your printer. 
+                                        Since this app is hosted in the cloud, this option may not work for local printers. 
+                                        Consider using <strong>Browser Print with RawBT</strong> instead (see below).
+                                    </AlertDescription>
+                                </Alert>
+
                                 <div className="space-y-2">
                                     <Label htmlFor="printer-ip">Printer IP Address</Label>
                                     <div className="flex gap-2">
@@ -296,15 +304,46 @@ export default function PrinterSettings() {
                     {method === 'browser' && (
                         <Card>
                             <CardHeader>
-                                <CardTitle>Browser Print Tips</CardTitle>
+                                <CardTitle>📱 Recommended: Use RawBT App (Android)</CardTitle>
+                                <CardDescription>
+                                    The easiest way to print from your Android tablet to your Vozy P80 thermal printer
+                                </CardDescription>
                             </CardHeader>
-                            <CardContent>
-                                <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
-                                    <li>Make sure your printer is connected to the same WiFi network as your tablet</li>
-                                    <li>For iOS: Your printer needs to support AirPrint</li>
-                                    <li>For Android: Use your printer's companion app to set it up first</li>
-                                    <li>The receipt will open in a print preview - select your printer from the list</li>
-                                </ul>
+                            <CardContent className="space-y-4">
+                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                    <h4 className="font-medium text-green-800 mb-2">Setup Steps:</h4>
+                                    <ol className="text-sm text-green-700 space-y-2 list-decimal list-inside">
+                                        <li>
+                                            <strong>Install RawBT</strong> from Google Play Store
+                                            <br />
+                                            <span className="text-xs">Search for "RawBT Print Service"</span>
+                                        </li>
+                                        <li>
+                                            <strong>Find your printer's IP:</strong>
+                                            <br />
+                                            <span className="text-xs">Turn off printer → Hold FEED button → Turn on → Read IP from printout</span>
+                                        </li>
+                                        <li>
+                                            <strong>Configure RawBT:</strong>
+                                            <br />
+                                            <span className="text-xs">Open RawBT → Settings → Connection: Network (TCP/IP) → Enter IP → Port: 9100</span>
+                                        </li>
+                                        <li>
+                                            <strong>Print from HIMS:</strong>
+                                            <br />
+                                            <span className="text-xs">When printing, select "RawBT" as your printer in the print dialog</span>
+                                        </li>
+                                    </ol>
+                                </div>
+
+                                <div className="p-4 bg-muted rounded-lg">
+                                    <h4 className="font-medium mb-2">Alternative Options:</h4>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+                                        <li>Make sure your printer is connected to the same WiFi network as your tablet</li>
+                                        <li>Some printers support direct Android printing - check your printer's manual</li>
+                                        <li>The receipt will open in a print preview - select your printer from the list</li>
+                                    </ul>
+                                </div>
                             </CardContent>
                         </Card>
                     )}
