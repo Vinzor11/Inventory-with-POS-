@@ -135,6 +135,118 @@ class ReceiptPrintService
         return implode("\n", $lines);
     }
 
+    /**
+     * Generate plain text sales receipt (no ESC/POS commands)
+     * For use with RawBT and text sharing on mobile devices
+     */
+    public function generateSalesReceiptPlain(Sale $sale, array $paymentSummary): string
+    {
+        $lines = [];
+        
+        // Header - plain text, centered manually
+        $lines[] = $this->centerText("JOSHUA Construction");
+        $lines[] = $this->centerText("Supply & Trading");
+        $lines[] = $this->centerText($this->storeAddress);
+        $lines[] = $this->centerText("Mobile No: {$this->storeContact}");
+        $lines[] = "";
+        $lines[] = $this->separator('=');
+        
+        // Receipt title with disclaimer
+        $lines[] = $this->centerText("SALES INVOICE");
+        $lines[] = $this->centerText("NOT AN OFFICIAL RECEIPT");
+        $lines[] = $this->separator('-');
+        
+        // Transaction info
+        $lines[] = "SI No: " . $sale->sale_number;
+        $lines[] = "Date: " . $this->formatDateTime($sale->created_at);
+        $lines[] = "Cashier: " . ($sale->cashier->name ?? 'N/A');
+        $lines[] = $this->separator('-');
+        
+        // Items Header
+        $lines[] = $this->formatSalesItemHeader();
+        $lines[] = $this->separator('-');
+        
+        // Items
+        foreach ($sale->items as $item) {
+            $variant = $item->productVariant;
+            $product = $variant->product;
+            $itemName = $this->buildItemName($product, $variant);
+            
+            $lines = array_merge($lines, $this->formatSalesItem(
+                $itemName,
+                (float)$item->quantity,
+                (float)$item->unit_price,
+                (float)$item->line_total
+            ));
+        }
+        
+        $lines[] = $this->separator('-');
+        
+        // Totals (plain text, no bold)
+        $lines[] = $this->formatAmountLine("Subtotal", (float)$sale->subtotal);
+        $discount = $paymentSummary['discount'] ?? 0;
+        if ($discount > 0) {
+            $lines[] = $this->formatAmountLine("Discount", -$discount);
+        }
+        $lines[] = $this->separator('-');
+        $lines[] = $this->formatAmountLine("TOTAL DUE", (float)$sale->total);
+        
+        // Payment info
+        $totalPaid = $paymentSummary['total_paid'] ?? 0;
+        if ($totalPaid > 0) {
+            $paymentMethod = ucfirst(strtolower($sale->payments->first()?->payment_method ?? 'Cash'));
+            $lines[] = $this->formatAmountLine($paymentMethod, $totalPaid);
+            $change = $paymentSummary['change'] ?? 0;
+            if ($change > 0) {
+                $lines[] = $this->formatAmountLine("Change", $change);
+            }
+            $balance = $paymentSummary['balance'] ?? 0;
+            if ($balance > 0) {
+                $lines[] = $this->formatAmountLine("Balance", $balance);
+            }
+        } else {
+            $lines[] = "";
+            $lines[] = $this->centerText("** UNPAID **");
+        }
+        
+        // Delivery info
+        if ($sale->is_for_delivery) {
+            $lines[] = $this->separator('-');
+            $deliveryLine = "DELIVER TO: " . ($sale->delivery_name ?? 'N/A');
+            $lines[] = $deliveryLine;
+            
+            $addressParts = [];
+            if ($sale->delivery_address) {
+                $addressParts[] = $sale->delivery_address;
+            }
+            if ($sale->delivery_contact) {
+                $addressParts[] = "Mobile No: " . $sale->delivery_contact;
+            }
+            if ($addressParts) {
+                $addressLine = implode('  ', $addressParts);
+                $wrapped = wordwrap($addressLine, $this->width, "\n", true);
+                foreach (explode("\n", $wrapped) as $line) {
+                    $lines[] = $line;
+                }
+            }
+        }
+        
+        // Footer
+        $lines[] = $this->separator('-');
+        $lines[] = $this->centerText("Thank you for shopping!");
+        $lines[] = $this->centerText("Please keep this receipt.");
+        $lines[] = $this->separator('-');
+        $lines[] = "";
+        $lines[] = "Printed: " . $this->formatDateTime(now());
+        $lines[] = $this->separator('=');
+        
+        // Just add some blank lines at the end (no cut command)
+        $lines[] = "";
+        $lines[] = "";
+        
+        return implode("\n", $lines);
+    }
+
     // ========================================================================
     // DELIVERY RECEIPT
     // ========================================================================
@@ -419,6 +531,130 @@ class ReceiptPrintService
             'coconut' => 'Coconut',
             default => ucfirst(str_replace('_', ' ', $type)),
         };
+    }
+
+    /**
+     * Generate plain text weigh-in receipt (no ESC/POS commands)
+     * For use with RawBT and text sharing on mobile devices
+     */
+    public function generateWeighInReceiptPlain(WeighInTransaction $transaction): string
+    {
+        $lines = [];
+        
+        // Header - plain text
+        $lines[] = $this->centerText("JOSHUA Construction");
+        $lines[] = $this->centerText("Supply & Trading");
+        $lines[] = $this->centerText($this->storeAddress);
+        $lines[] = $this->centerText("Mobile No: {$this->storeContact}");
+        $lines[] = "";
+        $lines[] = $this->separator('=');
+        
+        // Title with disclaimer
+        $lines[] = $this->centerText("WEIGH-IN SLIP");
+        $lines[] = $this->centerText("NOT AN OFFICIAL RECEIPT");
+        $lines[] = $this->separator('-');
+        
+        // Info
+        $lines[] = "Ref No: " . $transaction->ref_num;
+        $lines[] = "Date: " . $this->formatDateTime($transaction->weighed_at ?? $transaction->created_at);
+        if ($transaction->weighedBy) {
+            $lines[] = "Weighed by: " . ($transaction->weighedBy->name ?? 'N/A');
+        }
+        $lines[] = $this->separator('-');
+        
+        // Group items by type
+        $itemsByType = $transaction->weighIns->groupBy('type');
+        
+        foreach ($itemsByType as $type => $items) {
+            $typeName = $this->formatWeighInType($type);
+            $unitPrice = (float)$items->first()->unit_price;
+            $isCoconut = $type === 'coconut';
+            $unit = $isCoconut ? 'pcs' : 'kg';
+            
+            // Type header with price
+            $priceLabel = $isCoconut ? "/pc" : "/kg";
+            $lines[] = "{$typeName} @ P" . number_format($unitPrice, 2) . $priceLabel;
+            
+            // Individual weights/counts
+            $quantities = [];
+            foreach ($items as $item) {
+                if ($isCoconut) {
+                    $quantities[] = (int)$item->count;
+                } else {
+                    $quantities[] = number_format((float)$item->weight_kg, 2);
+                }
+            }
+            
+            // Calculate totals
+            if ($isCoconut) {
+                $totalQty = $items->sum('count');
+            } else {
+                $totalQty = $items->sum('weight_kg');
+            }
+            
+            // Show quantities
+            if (count($items) === 1) {
+                if ($isCoconut) {
+                    $qtyLine = "  {$totalQty} {$unit}";
+                } else {
+                    $qtyLine = "  " . number_format($totalQty, 2) . " {$unit}";
+                }
+                $lines[] = $qtyLine;
+            } else {
+                if ($isCoconut) {
+                    $qtyLine = "  " . implode(' + ', $quantities) . " = {$totalQty} {$unit}";
+                } else {
+                    $qtyLine = "  " . implode(' + ', $quantities) . " = " . number_format($totalQty, 2) . " {$unit}";
+                }
+                
+                if (strlen($qtyLine) > $this->width) {
+                    $lines[] = "  " . implode(' + ', $quantities);
+                    if ($isCoconut) {
+                        $lines[] = "  = {$totalQty} {$unit}";
+                    } else {
+                        $lines[] = "  = " . number_format($totalQty, 2) . " {$unit}";
+                    }
+                } else {
+                    $lines[] = $qtyLine;
+                }
+            }
+            
+            // Subtotal for this type
+            $typeTotal = $items->sum('total_amount');
+            $lines[] = $this->formatAmountLine("  Subtotal", (float)$typeTotal);
+            $lines[] = $this->separator('-');
+        }
+        
+        // Grand Total (plain text, no bold)
+        $lines[] = $this->formatAmountLine("TOTAL AMOUNT", (float)($transaction->total_amount ?? 0));
+        $lines[] = $this->separator('=');
+        
+        // Payment status
+        if ($transaction->status === 'paid') {
+            $lines[] = $this->centerText("*** PAID ***");
+        } else {
+            $lines[] = $this->centerText("** UNPAID **");
+            $lines[] = $this->centerText("Present this to cashier");
+        }
+        
+        // Notes
+        if ($transaction->notes) {
+            $lines[] = $this->separator('-');
+            $lines[] = "Notes: " . $transaction->notes;
+        }
+        
+        // Footer
+        $lines[] = $this->separator('-');
+        $lines[] = $this->centerText("Thank you!");
+        $lines[] = "";
+        $lines[] = "Printed: " . $this->formatDateTime(now());
+        $lines[] = $this->separator('=');
+        
+        // Just blank lines at the end (no cut command)
+        $lines[] = "";
+        $lines[] = "";
+        
+        return implode("\n", $lines);
     }
 
     // ========================================================================

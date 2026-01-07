@@ -120,12 +120,17 @@ export async function fetchReceiptText(
 
 /**
  * Fetch sales receipt text for preview
+ * @param saleId - The sale ID
+ * @param width - Printer width (58 or 80mm)
+ * @param plain - If true, returns plain text without ESC/POS commands (for sharing/RawBT)
  */
 export async function fetchSalesReceiptText(
     saleId: number,
-    width: 58 | 80 = 80
+    width: 58 | 80 = 80,
+    plain: boolean = true
 ): Promise<string> {
-    const url = `/receipts/sales/${saleId}?width=${width}`;
+    const format = plain ? 'plain' : 'escpos';
+    const url = `/receipts/sales/${saleId}?width=${width}&format=${format}`;
     return fetchReceiptText(url);
 }
 
@@ -208,12 +213,17 @@ export async function printDeliveryReceipt(
 
 /**
  * Fetch weigh-in receipt text for preview
+ * @param transactionId - The transaction ID
+ * @param width - Printer width (58 or 80mm)
+ * @param plain - If true, returns plain text without ESC/POS commands (for sharing/RawBT)
  */
 export async function fetchWeighInReceiptText(
     transactionId: number,
-    width: 58 | 80 = 80
+    width: 58 | 80 = 80,
+    plain: boolean = true
 ): Promise<string> {
-    const url = `/receipts/weigh-ins/${transactionId}?width=${width}`;
+    const format = plain ? 'plain' : 'escpos';
+    const url = `/receipts/weigh-ins/${transactionId}?width=${width}&format=${format}`;
     return fetchReceiptText(url);
 }
 
@@ -491,17 +501,15 @@ export function cleanReceiptText(receiptText: string): string {
 /**
  * Share receipt text via Android share menu (for RawBT)
  * This is the best method for Android tablets with thermal printers
+ * Note: The text should already be clean (from backend with format=plain)
  */
 export async function shareReceipt(receiptText: string): Promise<boolean> {
-    // Clean the receipt text (remove ESC/POS commands)
-    const cleanedText = cleanReceiptText(receiptText);
-
     // Check if Web Share API is available (Android Chrome supports this)
     if (navigator.share) {
         try {
             await navigator.share({
                 title: 'Receipt',
-                text: cleanedText,
+                text: receiptText,
             });
             return true;
         } catch (error) {
