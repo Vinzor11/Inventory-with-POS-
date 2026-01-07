@@ -356,6 +356,115 @@ class ReceiptPrintService
         return implode("\n", $lines);
     }
 
+    /**
+     * Generate plain text delivery receipt (no ESC/POS commands)
+     * For use with RawBT and text sharing on mobile devices
+     */
+    public function generateDeliveryReceiptPlain(Delivery $delivery, array $deliverySummary = []): string
+    {
+        $lines = [];
+        
+        // Header - plain text
+        $lines[] = $this->centerText("JOSHUA Construction");
+        $lines[] = $this->centerText("Supply & Trading");
+        $lines[] = $this->centerText($this->storeAddress);
+        $lines[] = $this->centerText("Mobile No: {$this->storeContact}");
+        $lines[] = "";
+        $lines[] = $this->separator('=');
+        
+        // Title with disclaimer
+        $lines[] = $this->centerText("DELIVERY RECEIPT");
+        $lines[] = $this->centerText("NOT AN OFFICIAL RECEIPT");
+        $lines[] = $this->separator('-');
+        
+        // Info
+        $lines[] = "Date: " . $this->formatDateTime($delivery->delivered_at ?? $delivery->created_at);
+        if ($delivery->sale) {
+            $lines[] = "SI Ref: " . ($delivery->sale->sale_number ?? 'N/A');
+        }
+        if ($delivery->deliveredBy) {
+            $lines[] = "Driver: " . ($delivery->deliveredBy->name ?? 'N/A');
+        }
+        
+        // Status
+        $statusText = strtoupper($delivery->status ?? 'PENDING');
+        $lines[] = "Status: " . $statusText;
+        $lines[] = $this->separator('-');
+        
+        // Delivery Address - compact format
+        if ($delivery->sale) {
+            $deliveryLine = "DELIVER TO: " . ($delivery->sale->delivery_name ?? 'N/A');
+            $lines[] = $deliveryLine;
+            
+            $addressParts = [];
+            if ($delivery->sale->delivery_address) {
+                $addressParts[] = $delivery->sale->delivery_address;
+            }
+            if ($delivery->sale->delivery_contact) {
+                $addressParts[] = "Mobile No: " . $delivery->sale->delivery_contact;
+            }
+            if ($addressParts) {
+                $addressLine = implode('  ', $addressParts);
+                $wrapped = wordwrap($addressLine, $this->width, "\n", true);
+                foreach (explode("\n", $wrapped) as $line) {
+                    $lines[] = $line;
+                }
+            }
+            $lines[] = $this->separator('-');
+        }
+        
+        // Items - indented format
+        $lines[] = "ITEMS:";
+        foreach ($delivery->items as $item) {
+            $variant = $item->productVariant;
+            $product = $variant->product;
+            $itemName = $this->buildItemName($product, $variant);
+            $qty = number_format((float)$item->quantity, (float)$item->quantity == floor((float)$item->quantity) ? 0 : 1);
+            $unit = $product->base_unit ?? 'pcs';
+            $lines[] = "  {$itemName}  {$qty} {$unit}";
+        }
+        
+        $lines[] = $this->separator('-');
+        $lines[] = "Total: " . number_format($delivery->items->sum('quantity'), 0) . " items";
+        
+        // Remaining items for partial delivery
+        if ($delivery->status === 'partial' && $delivery->sale) {
+            $lines[] = $this->separator('=');
+            $lines[] = $this->centerText("REMAINING ITEMS");
+            $lines[] = $this->separator('-');
+            
+            $remainingItems = $this->calculateRemainingItems($delivery);
+            
+            if (count($remainingItems) > 0) {
+                foreach ($remainingItems as $remaining) {
+                    $qty = number_format($remaining['quantity'], 0);
+                    $lines[] = "  {$remaining['name']}  {$qty} {$remaining['unit']}";
+                }
+            } else {
+                $lines[] = "None";
+            }
+        }
+        
+        $lines[] = $this->separator('=');
+        
+        // Compact acknowledgment
+        $lines[] = "Received by:";
+        $lines[] = "Name: _________________ Sign: _________";
+        $lines[] = "Date: _________________________________";
+        
+        // Footer
+        $lines[] = $this->separator('-');
+        $lines[] = "";
+        $lines[] = "Printed: " . $this->formatDateTime(now());
+        $lines[] = $this->separator('=');
+        
+        // Just blank lines at the end (no cut command)
+        $lines[] = "";
+        $lines[] = "";
+        
+        return implode("\n", $lines);
+    }
+
     private function calculateRemainingItems(Delivery $delivery): array
     {
         $remainingItems = [];

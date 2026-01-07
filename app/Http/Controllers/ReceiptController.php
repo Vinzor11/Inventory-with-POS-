@@ -90,8 +90,21 @@ class ReceiptController extends Controller
             // Get printer width from request or use default
             $width = (int)$request->get('width', 80); // 58 or 80
             $charWidth = $width === 58 ? 32 : 48;
+            
+            // Check if plain text format is requested (for RawBT/sharing)
+            $format = $request->get('format', 'escpos');
 
             $printService = new ReceiptPrintService($charWidth);
+            
+            if ($format === 'plain') {
+                // Generate plain text receipt without ESC/POS commands
+                $receiptText = $printService->generateDeliveryReceiptPlain($delivery, $deliverySummary);
+                return response($receiptText, 200)
+                    ->header('Content-Type', 'text/plain; charset=utf-8')
+                    ->header('Content-Disposition', 'inline; filename="delivery-' . $delivery->id . '.txt"');
+            }
+            
+            // Default: ESC/POS formatted receipt
             $receiptText = $printService->generateDeliveryReceipt($delivery, $deliverySummary);
 
             return response($receiptText, 200)

@@ -525,6 +525,9 @@ export async function fetchReceiptRaw(url: string): Promise<ArrayBuffer> {
 /**
  * Share receipt as a file (for RawBT with ESC/POS commands)
  * This preserves bold, large text, and other formatting
+ * 
+ * IMPORTANT: Uses .prn extension so RawBT recognizes it as raw printer data
+ * and interprets ESC/POS commands (bold, size, etc.)
  */
 export async function shareReceiptAsFile(
     saleId: number,
@@ -536,9 +539,10 @@ export async function shareReceiptAsFile(
     try {
         const rawData = await fetchReceiptRaw(url);
         
-        // Create a file from the raw data
+        // Create a file from the raw data with .prn extension
+        // RawBT automatically treats .prn files as raw printer data with ESC/POS commands
         const blob = new Blob([rawData], { type: 'application/octet-stream' });
-        const file = new File([blob], `receipt-${saleId}.bin`, { type: 'application/octet-stream' });
+        const file = new File([blob], `receipt-${saleId}.prn`, { type: 'application/octet-stream' });
         
         // Check if we can share files
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -570,6 +574,7 @@ export async function shareReceiptAsFile(
 
 /**
  * Share weigh-in receipt as a file (for RawBT with ESC/POS commands)
+ * Uses .prn extension so RawBT interprets ESC/POS commands
  */
 export async function shareWeighInReceiptAsFile(
     transactionId: number,
@@ -580,8 +585,9 @@ export async function shareWeighInReceiptAsFile(
     try {
         const rawData = await fetchReceiptRaw(url);
         
+        // Use .prn extension for RawBT to recognize as raw printer data
         const blob = new Blob([rawData], { type: 'application/octet-stream' });
-        const file = new File([blob], `weighin-${transactionId}.bin`, { type: 'application/octet-stream' });
+        const file = new File([blob], `weighin-${transactionId}.prn`, { type: 'application/octet-stream' });
         
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
@@ -606,6 +612,50 @@ export async function shareWeighInReceiptAsFile(
         return false;
     } catch (error) {
         console.warn('Share weigh-in as file failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Share delivery receipt as a file (for RawBT with ESC/POS commands)
+ * Uses .prn extension so RawBT interprets ESC/POS commands
+ */
+export async function shareDeliveryReceiptAsFile(
+    deliveryId: number,
+    width: 58 | 80 = 80
+): Promise<boolean> {
+    const url = `/receipts/deliveries/${deliveryId}?width=${width}&format=escpos`;
+    
+    try {
+        const rawData = await fetchReceiptRaw(url);
+        
+        // Use .prn extension for RawBT to recognize as raw printer data
+        const blob = new Blob([rawData], { type: 'application/octet-stream' });
+        const file = new File([blob], `delivery-${deliveryId}.prn`, { type: 'application/octet-stream' });
+        
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                title: 'Delivery Receipt',
+                files: [file],
+            });
+            return true;
+        }
+        
+        // Fallback to text
+        const textDecoder = new TextDecoder('latin1');
+        const text = textDecoder.decode(rawData);
+        
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Delivery Receipt',
+                text: text,
+            });
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.warn('Share delivery as file failed:', error);
         return false;
     }
 }
