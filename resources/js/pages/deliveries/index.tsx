@@ -8,8 +8,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchDeliveryReceiptText, printDeliveryReceipt } from '@/lib/receipt-print';
+import { fetchDeliveryReceiptText, shareReceipt } from '@/lib/receipt-print';
 import { toast } from '@/lib/toast';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -97,9 +96,7 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
         triggerFetch({ page });
     };
 
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
 
@@ -112,20 +109,17 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
         setSelectedDeliveryId(deliveryId);
         setIsLoadingReceipt(true);
         try {
+            // Fetch ESC/POS formatted receipt (has bold commands)
             const text = await fetchDeliveryReceiptText(deliveryId, 80);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
-            toast.error('Failed to load receipt');
+            console.error('Failed to print receipt:', error);
+            toast.error('Failed to print receipt');
         } finally {
             setIsLoadingReceipt(false);
+            setSelectedDeliveryId(null);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!selectedDeliveryId) return;
-        await printDeliveryReceipt(selectedDeliveryId, { width: 80 });
     };
 
     return (
@@ -267,15 +261,6 @@ export default function DeliveriesIndex({ deliveries, filters }: DeliveriesIndex
                     )}
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Delivery Receipt Preview"
-            />
         </AppLayout>
     );
 }

@@ -3,8 +3,7 @@ import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Truck, Printer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { fetchDeliveryReceiptText, printDeliveryReceipt } from '@/lib/receipt-print';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
+import { fetchDeliveryReceiptText, shareReceipt } from '@/lib/receipt-print';
 import { useState } from 'react';
 
 interface User {
@@ -69,30 +68,24 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
     const { name: storeName } = usePage().props as { name?: string };
     const storeDisplayName = storeName || 'STORE NAME';
     const [isPrinting, setIsPrinting] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState<string>('');
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     
     const handleNewDelivery = () => {
         router.visit('/');
     };
 
     const handlePrintClick = async () => {
-        setIsLoadingPreview(true);
+        setIsPrinting(true);
         try {
+            // Fetch ESC/POS formatted receipt (has bold commands)
             const text = await fetchDeliveryReceiptText(delivery.id, 80);
-            setReceiptText(text);
-            setShowPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to load receipt preview:', error);
-            alert('Failed to load receipt preview. Please try again.');
+            console.error('Failed to print receipt:', error);
+            alert('Failed to print receipt. Please try again.');
         } finally {
-            setIsLoadingPreview(false);
+            setIsPrinting(false);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        await printDeliveryReceipt(delivery.id, { width: 80 });
     };
 
     const formatTransactionTime = (dateString: string) => {
@@ -224,10 +217,10 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
                             variant="outline"
                             className="flex-1"
                             onClick={handlePrintClick}
-                            disabled={isLoadingPreview || isPrinting}
+                            disabled={isPrinting}
                         >
                             <Printer className="h-4 w-4 mr-2" />
-                            {isLoadingPreview ? 'Loading...' : isPrinting ? 'Printing...' : 'Print Delivery Receipt'}
+                            {isPrinting ? 'Printing...' : 'Print'}
                         </Button>
                         <Button
                             className="flex-1 bg-blue-600 hover:bg-blue-700"
@@ -239,15 +232,6 @@ export default function DeliverySuccess({ delivery, deliverySummary }: DeliveryS
                     </div>
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showPreview}
-                onClose={() => setShowPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Delivery Receipt Preview"
-            />
         </>
     );
 }

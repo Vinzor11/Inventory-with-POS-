@@ -197,11 +197,9 @@ export async function printDeliveryReceipt(
  */
 export async function fetchWeighInReceiptText(
     transactionId: number,
-    width: 58 | 80 = 80,
-    plain: boolean = true
+    width: 58 | 80 = 80
 ): Promise<string> {
-    const format = plain ? 'plain' : 'escpos';
-    const url = `/receipts/weigh-ins/${transactionId}?width=${width}&format=${format}`;
+    const url = `/receipts/weigh-ins/${transactionId}?width=${width}`;
     return fetchReceiptText(url);
 }
 

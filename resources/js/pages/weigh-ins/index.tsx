@@ -11,8 +11,7 @@ import { router } from '@inertiajs/react';
 import { ManagePricesModal } from '@/components/manage-prices-modal';
 import { NewWeighInModal } from '@/components/new-weigh-in-modal';
 import { formatCurrency } from '@/lib/format-currency';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchWeighInReceiptText, printWeighInReceipt } from '@/lib/receipt-print';
+import { fetchWeighInReceiptText, shareReceipt } from '@/lib/receipt-print';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Weigh-Ins', href: '/weigh-ins' }];
 
@@ -80,9 +79,7 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
     const [isNewWeighInModalOpen, setIsNewWeighInModalOpen] = useState(false);
     const [expandedTransactions, setExpandedTransactions] = useState<Set<number>>(new Set());
     
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [selectedTransactionId, setSelectedTransactionId] = useState<number | null>(null);
 
@@ -132,19 +129,16 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
         setSelectedTransactionId(transactionId);
         setIsLoadingReceipt(true);
         try {
+            // Fetch ESC/POS formatted receipt (has bold commands)
             const text = await fetchWeighInReceiptText(transactionId, 80);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
+            console.error('Failed to print receipt:', error);
         } finally {
             setIsLoadingReceipt(false);
+            setSelectedTransactionId(null);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!selectedTransactionId) return;
-        await printWeighInReceipt(selectedTransactionId, { width: 80 });
     };
 
     const allItems = [
@@ -383,15 +377,6 @@ export default function WeighInsIndex({ transactions, standaloneWeighIns, filter
                 onSuccess={() => {
                     router.reload();
                 }}
-            />
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Weigh-In Receipt Preview"
             />
         </AppLayout>
     );

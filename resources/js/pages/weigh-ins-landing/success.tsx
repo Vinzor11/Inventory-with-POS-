@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle2, Scale, Printer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
 import { useState } from 'react';
-import { fetchWeighInReceiptText, printWeighInReceipt } from '@/lib/receipt-print';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
+import { fetchWeighInReceiptText, shareReceipt } from '@/lib/receipt-print';
 
 interface User {
     id: number;
@@ -49,9 +48,6 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
     
     // Printing state
     const [isPrinting, setIsPrinting] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState<string>('');
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     
     // Determine if we're showing a transaction or single weigh-in
     const isTransaction = !!transaction;
@@ -83,22 +79,18 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
             return;
         }
         
-        setIsLoadingPreview(true);
+        setIsPrinting(true);
         try {
+            // Fetch ESC/POS formatted receipt (has bold commands)
             const text = await fetchWeighInReceiptText(transactionId, 80);
-            setReceiptText(text);
-            setShowPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to load receipt preview:', error);
-            alert('Failed to load receipt preview. Please try again.');
+            console.error('Failed to print receipt:', error);
+            alert('Failed to print receipt. Please try again.');
         } finally {
-            setIsLoadingPreview(false);
+            setIsPrinting(false);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!transactionId) return;
-        await printWeighInReceipt(transactionId, { width: 80 });
     };
 
     const formatTransactionTime = (dateString: string) => {
@@ -624,10 +616,10 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
                             variant="outline"
                             className="flex-1"
                             onClick={handlePrintClick}
-                            disabled={isLoadingPreview || isPrinting}
+                            disabled={isPrinting}
                         >
                             <Printer className="h-4 w-4 mr-2" />
-                            {isLoadingPreview ? 'Loading...' : isPrinting ? 'Printing...' : 'Print Receipt'}
+                            {isPrinting ? 'Printing...' : 'Print'}
                         </Button>
                         <Button
                             className="flex-1 bg-blue-600 hover:bg-blue-700"
@@ -639,15 +631,6 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
                     </div>
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showPreview}
-                onClose={() => setShowPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Weigh-In Receipt Preview"
-            />
         </>
     );
 }

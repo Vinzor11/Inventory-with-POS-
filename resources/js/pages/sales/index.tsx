@@ -11,8 +11,7 @@ import { type BreadcrumbItem } from '@/types';
 import { router, useForm } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchSalesReceiptText, printSalesReceipt } from '@/lib/receipt-print';
+import { fetchSalesReceiptText, shareReceipt } from '@/lib/receipt-print';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -117,9 +116,7 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
 
     const [processing, setProcessing] = useState(false);
     
-    // Receipt preview state
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
+    // Receipt state
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
 
@@ -378,20 +375,17 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
         setSelectedSaleId(saleId);
         setIsLoadingReceipt(true);
         try {
+            // Fetch ESC/POS formatted receipt (has bold commands)
             const text = await fetchSalesReceiptText(saleId, 80);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Directly share to RawBT
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
-            toast.error('Failed to load receipt.');
+            console.error('Failed to print receipt:', error);
+            toast.error('Failed to print receipt.');
         } finally {
             setIsLoadingReceipt(false);
+            setSelectedSaleId(null);
         }
-    };
-
-    const handleConfirmPrint = async () => {
-        if (!selectedSaleId) return;
-        await printSalesReceipt(selectedSaleId, { width: 80 });
     };
 
     return (
@@ -678,15 +672,6 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
                     )}
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog with Share to RawBT button */}
-            <ReceiptPreviewDialog
-                isOpen={showReceiptPreview}
-                onClose={() => setShowReceiptPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Sales Receipt Preview"
-            />
         </AppLayout>
     );
 }
