@@ -288,14 +288,28 @@ export default function PrinterSettings() {
                                     </Alert>
                                 )}
 
-                                <div className="p-4 bg-muted rounded-lg">
-                                    <h4 className="font-medium mb-2">How to find your printer's IP address:</h4>
-                                    <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                                        <li>On the printer, hold the FEED button while turning it on</li>
-                                        <li>This prints a self-test page with network info</li>
-                                        <li>Look for "IP Address" in the printout</li>
-                                        <li>Or check your router's connected devices list</li>
-                                    </ol>
+                                <div className="p-4 bg-muted rounded-lg space-y-4">
+                                    <div>
+                                        <h4 className="font-medium mb-2">How to find your printer's IP address:</h4>
+                                        <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                                            <li>On the printer, hold the FEED button while turning it on</li>
+                                            <li>This prints a self-test page with network info</li>
+                                            <li>Look for "IP Address" - it shows as <code className="bg-background px-1 rounded">192-168-1-100</code> (dashes = dots)</li>
+                                            <li>Convert to: <code className="bg-background px-1 rounded">192.168.1.100</code></li>
+                                        </ol>
+                                    </div>
+
+                                    <div className="pt-2 border-t">
+                                        <h4 className="font-medium mb-2 text-amber-700">⚠️ Printer Not Showing in Router?</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+                                            <li><strong>Check Ethernet cable:</strong> Make sure it's firmly plugged into both printer and router</li>
+                                            <li><strong>Check router port:</strong> Try a different Ethernet port on your router</li>
+                                            <li><strong>Check printer status:</strong> Print another self-test page - look for "Connection: OK" or "Status: Online"</li>
+                                            <li><strong>Try RawBT anyway:</strong> Even if router doesn't show it, RawBT might still connect if printer is on the network</li>
+                                            <li><strong>Test from tablet:</strong> Open browser on tablet, go to <code className="bg-background px-1 rounded">http://192.168.1.100</code> - if page loads, printer is connected</li>
+                                            <li><strong>Check IP range:</strong> Make sure printer IP (192.168.1.100) matches your router's network (usually 192.168.1.x)</li>
+                                        </ul>
+                                    </div>
                                 </div>
                             </CardContent>
                         </Card>
