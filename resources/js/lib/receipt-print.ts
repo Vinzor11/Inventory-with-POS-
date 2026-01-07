@@ -422,25 +422,53 @@ function downloadReceipt(receiptText: string): void {
 }
 
 /**
+ * Clean receipt text by removing all ESC/POS commands
+ * Returns plain text suitable for sharing or display
+ */
+export function cleanReceiptText(receiptText: string): string {
+    return receiptText
+        // Remove ANSI escape sequences
+        .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+        // Remove ESC @ (initialize printer)
+        .replace(/\x1B\x40/g, '')
+        // Remove ESC 3 n (line spacing) - matches ESC 3 followed by any byte
+        .replace(/\x1B\x33[\x00-\xFF]/g, '')
+        // Remove GS V (cut paper) - various cut commands
+        .replace(/\x1D\x56[\x00-\xFF]/g, '')
+        .replace(/\x1DV[\x00-\xFF]/g, '')
+        // Remove ESC a (alignment)
+        .replace(/\x1B\x61[\x00-\xFF]/g, '')
+        .replace(/\x1Ba[\x00-\xFF]/g, '')
+        // Remove ESC E (bold on/off)
+        .replace(/\x1B\x45[\x00-\xFF]/g, '')
+        .replace(/\x1BE[\x00-\xFF]/g, '')
+        // Remove ESC G (double-strike on/off)
+        .replace(/\x1B\x47[\x00-\xFF]/g, '')
+        .replace(/\x1BG[\x00-\xFF]/g, '')
+        // Remove GS ! (character size)
+        .replace(/\x1D\x21[\x00-\xFF]/g, '')
+        .replace(/\x1D![\x00-\xFF]/g, '')
+        // Remove any remaining control characters except newline, tab, space
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        // Remove carriage returns
+        .replace(/\r/g, '')
+        // Trim trailing whitespace from each line
+        .split('\n')
+        .map(line => line.trimEnd())
+        .join('\n')
+        // Remove excessive blank lines at the end (keep max 2)
+        .replace(/\n{4,}$/g, '\n\n')
+        // Remove leading blank lines
+        .replace(/^\n+/, '');
+}
+
+/**
  * Share receipt text via Android share menu (for RawBT)
  * This is the best method for Android tablets with thermal printers
  */
 export async function shareReceipt(receiptText: string): Promise<boolean> {
-    // Clean the receipt text (remove ESC/POS commands for display)
-    const cleanedText = receiptText
-        .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
-        .replace(/\x1B\x40/g, '')
-        .replace(/\x1B\x33[\x00-\xFF]/g, '')
-        .replace(/\x1D\x56\x00/g, '')
-        .replace(/\x1B\x61/g, '')
-        .replace(/\x1B\x45\x01/g, '')
-        .replace(/\x1B\x45\x00/g, '')
-        .replace(/\x1B\x47\x01/g, '')
-        .replace(/\x1B\x47\x00/g, '')
-        .replace(/\x1D\x21\x11/g, '')
-        .replace(/\x1D\x21\x00/g, '')
-        .replace(/[\x00-\x08\x0B-\x1C\x1E-\x1F\x7F]/g, '')
-        .replace(/^\n+/, '');
+    // Clean the receipt text (remove ESC/POS commands)
+    const cleanedText = cleanReceiptText(receiptText);
 
     // Check if Web Share API is available (Android Chrome supports this)
     if (navigator.share) {
@@ -458,6 +486,23 @@ export async function shareReceipt(receiptText: string): Promise<boolean> {
     }
     
     return false;
+}
+
+/**
+ * Auto-print receipt by sharing to RawBT (for Android)
+ * Falls back to browser print if share is not available
+ */
+export async function autoPrintReceipt(receiptText: string): Promise<void> {
+    // Try sharing first (for RawBT on Android)
+    if (canShare()) {
+        const shared = await shareReceipt(receiptText);
+        if (shared) {
+            return;
+        }
+    }
+    
+    // Fall back to browser print
+    printViaBrowser(receiptText);
 }
 
 /**

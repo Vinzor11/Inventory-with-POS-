@@ -12,7 +12,7 @@ import { router, useForm } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
 import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchSalesReceiptText, printSalesReceipt } from '@/lib/receipt-print';
+import { fetchSalesReceiptText, shareReceipt, canShare, printViaBrowser } from '@/lib/receipt-print';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -379,8 +379,14 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
         setIsLoadingReceipt(true);
         try {
             const text = await fetchSalesReceiptText(saleId);
-            setReceiptText(text);
-            setShowReceiptPreview(true);
+            // Auto-share to RawBT if available, otherwise use browser print
+            if (canShare()) {
+                await shareReceipt(text);
+            } else {
+                // Fall back to browser print preview
+                setReceiptText(text);
+                setShowReceiptPreview(true);
+            }
         } catch (error) {
             console.error('Failed to fetch receipt:', error);
         } finally {
@@ -389,8 +395,8 @@ export default function SalesIndex({ sales, users, filters }: SalesIndexProps) {
     };
 
     const handleConfirmPrint = async () => {
-        if (!selectedSaleId) return;
-        await printSalesReceipt(selectedSaleId);
+        // Use browser print for non-Android devices
+        printViaBrowser(receiptText);
     };
 
     return (

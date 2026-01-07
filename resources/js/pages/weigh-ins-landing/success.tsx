@@ -1,11 +1,10 @@
 import { Head, usePage } from '@inertiajs/react';
 import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Scale, Printer } from 'lucide-react';
+import { CheckCircle2, Scale, Printer, Share2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format-currency';
-import { useState } from 'react';
-import { ReceiptPreviewDialog } from '@/components/receipt-preview-dialog';
-import { fetchWeighInReceiptText, printWeighInReceipt } from '@/lib/receipt-print';
+import { useState, useEffect } from 'react';
+import { fetchWeighInReceiptText, shareReceipt, canShare } from '@/lib/receipt-print';
 
 interface User {
     id: number;
@@ -47,11 +46,13 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
     const { name: storeName } = usePage().props as { name?: string };
     const storeDisplayName = storeName || 'STORE NAME';
     
-    // Receipt preview state
-    const [showPreview, setShowPreview] = useState(false);
-    const [receiptText, setReceiptText] = useState('');
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    // Printing state
     const [isPrinting, setIsPrinting] = useState(false);
+    const [showShareButton, setShowShareButton] = useState(false);
+
+    useEffect(() => {
+        setShowShareButton(canShare());
+    }, []);
     
     // Determine if we're showing a transaction or single weigh-in
     const isTransaction = !!transaction;
@@ -84,29 +85,33 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
             return;
         }
         
-        setIsLoadingPreview(true);
+        setIsPrinting(true);
         try {
             const text = await fetchWeighInReceiptText(transactionId);
-            setReceiptText(text);
-            setShowPreview(true);
+            // Auto-share to RawBT if available
+            if (canShare()) {
+                await shareReceipt(text);
+            } else {
+                // Fallback to window.print
+                window.print();
+            }
         } catch (error) {
-            console.error('Failed to fetch receipt:', error);
-            // Fallback to window.print
+            console.error('Failed to print receipt:', error);
             window.print();
         } finally {
-            setIsLoadingPreview(false);
+            setIsPrinting(false);
         }
     };
 
-    const handleConfirmPrint = async () => {
+    const handleShareClick = async () => {
         if (!transactionId) return;
         
         setIsPrinting(true);
         try {
-            await printWeighInReceipt(transactionId);
-            setShowPreview(false);
+            const text = await fetchWeighInReceiptText(transactionId);
+            await shareReceipt(text);
         } catch (error) {
-            console.error('Print failed:', error);
+            console.error('Share failed:', error);
         } finally {
             setIsPrinting(false);
         }
@@ -631,14 +636,25 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
 
                     {/* Actions */}
                     <div className="flex gap-3">
+                        {showShareButton && (
+                            <Button
+                                variant="outline"
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                onClick={handleShareClick}
+                                disabled={isPrinting}
+                            >
+                                <Share2 className="h-4 w-4 mr-2" />
+                                {isPrinting ? 'Printing...' : 'Print (RawBT)'}
+                            </Button>
+                        )}
                         <Button
                             variant="outline"
                             className="flex-1"
                             onClick={handlePrintClick}
-                            disabled={isLoadingPreview || isPrinting}
+                            disabled={isPrinting}
                         >
                             <Printer className="h-4 w-4 mr-2" />
-                            {isLoadingPreview ? 'Loading Preview...' : isPrinting ? 'Printing...' : 'Print Receipt'}
+                            {isPrinting ? 'Printing...' : 'Print'}
                         </Button>
                         <Button
                             className="flex-1 bg-blue-600 hover:bg-blue-700"
@@ -650,15 +666,6 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
                     </div>
                 </div>
             </div>
-
-            {/* Receipt Preview Dialog */}
-            <ReceiptPreviewDialog
-                isOpen={showPreview}
-                onClose={() => setShowPreview(false)}
-                receiptText={receiptText}
-                onConfirm={handleConfirmPrint}
-                title="Weigh-In Receipt Preview"
-            />
         </>
     );
 }
