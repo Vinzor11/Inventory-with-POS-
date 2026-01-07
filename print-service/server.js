@@ -399,14 +399,39 @@ async function handleTestPrint(req, res) {
     }
 }
 
-app.listen(PORT, () => {
+// Get host to bind to - 0.0.0.0 allows connections from other devices on the network
+const HOST = process.env.HOST || '0.0.0.0';
+
+// Get local IP address for display
+function getLocalIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
+
+app.listen(PORT, HOST, () => {
+    const localIP = getLocalIP();
     console.log(`\n========================================`);
     console.log(`HIMS Print Service running on port ${PORT}`);
     console.log(`Configured printer: ${PRINTER_NAME}`);
+    console.log(`\n📍 Access URLs:`);
+    console.log(`   Local:   http://localhost:${PORT}`);
+    console.log(`   Network: http://${localIP}:${PORT}`);
+    console.log(`\n📱 For tablet/phone printing:`);
+    console.log(`   Use the Network URL above in your app settings`);
     console.log(`\nTo change printer, set PRINTER_NAME environment variable`);
     console.log(`or use ?printer=PRINTER_NAME in the print request`);
-    console.log(`\nHealth check: http://localhost:${PORT}/health`);
-    console.log(`List printers: http://localhost:${PORT}/printers`);
+    console.log(`\nEndpoints:`);
+    console.log(`   Health check: /health`);
+    console.log(`   List printers: /printers`);
+    console.log(`   Print: POST /print`);
+    console.log(`   Test print: GET /test`);
     console.log(`========================================\n`);
 });
 

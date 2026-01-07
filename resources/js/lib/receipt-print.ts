@@ -12,6 +12,61 @@ export interface PrintOptions {
     width?: 58 | 80; // Printer width in mm
     printerName?: string; // Optional printer name
     showPreview?: boolean; // Show preview before printing (default: true)
+    printServerUrl?: string; // Custom print server URL (for network printing)
+}
+
+// Print method types
+export type PrintMethod = 'browser' | 'network' | 'bluetooth' | 'usb';
+
+// Storage keys
+const PRINT_METHOD_KEY = 'hims_print_method';
+const NETWORK_PRINTER_IP_KEY = 'hims_network_printer_ip';
+
+/**
+ * Get the configured print method
+ */
+export function getPrintMethod(): PrintMethod {
+    if (typeof window === 'undefined') return 'browser';
+    return (localStorage.getItem(PRINT_METHOD_KEY) as PrintMethod) || 'browser';
+}
+
+/**
+ * Set the print method
+ */
+export function setPrintMethod(method: PrintMethod): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(PRINT_METHOD_KEY, method);
+}
+
+/**
+ * Get the configured network printer IP
+ */
+export function getNetworkPrinterIP(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(NETWORK_PRINTER_IP_KEY);
+}
+
+/**
+ * Set the network printer IP address
+ * @param ip - The printer's IP address (e.g., "192.168.1.100")
+ */
+export function setNetworkPrinterIP(ip: string | null): void {
+    if (typeof window === 'undefined') return;
+    if (ip) {
+        localStorage.setItem(NETWORK_PRINTER_IP_KEY, ip);
+    } else {
+        localStorage.removeItem(NETWORK_PRINTER_IP_KEY);
+    }
+}
+
+/**
+ * Get print settings summary
+ */
+export function getPrintSettings(): { method: PrintMethod; networkIP: string | null } {
+    return {
+        method: getPrintMethod(),
+        networkIP: getNetworkPrinterIP(),
+    };
 }
 
 /**
@@ -198,82 +253,97 @@ export async function printWeighInReceipt(
 /**
  * Send receipt data to printer
  * 
- * This function attempts multiple print methods in order:
- * 1. Local HTTP print service (localhost:3002)
- * 2. Electron/Node print service (if available)
- * 3. Browser extension (if available)
- * 4. Web Serial API (for direct USB printer connection)
- * 5. Fallback: Download as text file for manual printing
+ * Uses the configured print method:
+ * - 'browser': Opens browser print dialog (works with any printer the tablet can see)
+ * - 'network': Sends directly to network printer via backend proxy (for LAN printers)
+ * - 'bluetooth': Uses Web Bluetooth API (for Bluetooth printers)
+ * - 'usb': Uses Web Serial API (for USB printers with OTG)
  */
 async function sendToPrinter(
     receiptData: ArrayBuffer | string,
     options: PrintOptions = {}
 ): Promise<void> {
+    const method = getPrintMethod();
+    
     // Convert ArrayBuffer to string for methods that need it
     const receiptText = typeof receiptData === 'string' 
         ? receiptData 
         : new TextDecoder('latin1').decode(new Uint8Array(receiptData));
     
-    // Method 1: Try local HTTP print service (Node.js service on localhost:3002)
-    try {
-        await printViaHttpService(receiptData, options);
-        return;
-    } catch (error) {
-        console.warn('HTTP print service failed:', error);
-    }
+    // Convert to Uint8Array for binary methods
+    const receiptBytes = receiptData instanceof ArrayBuffer 
+        ? new Uint8Array(receiptData)
+        : new TextEncoder().encode(receiptData);
 
-    // Method 2: Try Electron/Node print service
-    if (window.electron?.print) {
-        try {
-            await window.electron.print(receiptText, options);
+    switch (method) {
+        case 'network':
+            const printerIP = getNetworkPrinterIP();
+            if (!printerIP) {
+                throw new Error('Network printer IP not configured. Please go to Settings > Printer to configure.');
+            }
+            await printViaNetworkPrinter(receiptBytes, printerIP);
             return;
-        } catch (error) {
-            console.warn('Electron print failed:', error);
-        }
-    }
 
-    // Method 3: Try browser extension
-    if (window.printExtension?.print) {
-        try {
-            await window.printExtension.print(receiptText, options);
+        case 'usb':
+            if (navigator.serial) {
+                await printViaSerial(receiptText, options);
+                return;
+            }
+            throw new Error('USB printing not supported on this device');
+
+        case 'browser':
+        default:
+            // Use browser print dialog
+            printViaBrowser(receiptText);
             return;
-        } catch (error) {
-            console.warn('Extension print failed:', error);
-        }
+    }
+}
+
+/**
+ * Print via network printer (sends to backend which proxies to printer)
+ * Most thermal printers accept raw ESC/POS data on port 9100
+ */
+async function printViaNetworkPrinter(
+    receiptData: Uint8Array,
+    printerIP: string
+): Promise<void> {
+    // Send to backend endpoint that will proxy to the printer
+    const response = await fetch('/api/print/network', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+            printer_ip: printerIP,
+            printer_port: 9100,
+            data: Array.from(receiptData), // Send as array of bytes
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(error.message || `Print failed: ${response.status}`);
     }
 
-    // Method 4: Try Web Serial API (for direct USB printer connection)
-    if (navigator.serial) {
-        try {
-            await printViaSerial(receiptText, options);
-            return;
-        } catch (error) {
-            console.warn('Serial print failed:', error);
-        }
+    const result = await response.json();
+    if (!result.success) {
+        throw new Error(result.message || 'Print failed');
     }
-
-    // Fallback: Download as text file
-    downloadReceipt(receiptText);
-    
-    // Show notification with instructions
-    alert(
-        'Receipt downloaded as text file.\n\n' +
-        'To print directly:\n' +
-        '1. Install and start the local print service (see print-service/README.md)\n' +
-        '2. Or manually print the downloaded file using your thermal printer software.\n\n' +
-        'The print service runs on http://localhost:3002'
-    );
 }
 
 /**
  * Print via local HTTP print service
- * This connects to a Node.js service running on localhost:3002
+ * This connects to a Node.js service running on localhost:3002 or a configured network address
  */
 async function printViaHttpService(
     receiptData: ArrayBuffer | string,
     options: PrintOptions
 ): Promise<void> {
-    const printServiceUrl = 'http://localhost:3002/print';
+    // Use custom URL from options, or saved URL, or default to localhost
+    const baseUrl = options.printServerUrl || getPrintServerUrl() || 'http://localhost:3002';
+    const printServiceUrl = `${baseUrl}/print`;
     const printerName = options.printerName;
     
     const url = printerName 
@@ -349,6 +419,83 @@ function downloadReceipt(receiptText: string): void {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+/**
+ * Print using browser's built-in print dialog
+ * This is the best fallback for tablets and mobile devices
+ */
+export function printViaBrowser(receiptText: string): void {
+    // Clean the receipt text (remove ESC/POS commands)
+    const cleanedText = receiptText
+        .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+        .replace(/\x1B\x40/g, '')
+        .replace(/\x1B\x33[\x00-\xFF]/g, '')
+        .replace(/\x1D\x56\x00/g, '')
+        .replace(/\x1B\x61/g, '')
+        .replace(/\x1B\x45\x01/g, '')
+        .replace(/\x1B\x45\x00/g, '')
+        .replace(/\x1B\x47\x01/g, '')
+        .replace(/\x1B\x47\x00/g, '')
+        .replace(/\x1D\x21\x11/g, '')
+        .replace(/\x1D\x21\x00/g, '')
+        .replace(/[\x00-\x08\x0B-\x1C\x1E-\x1F\x7F]/g, '')
+        .replace(/^\n+/, '');
+
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    if (!printWindow) {
+        alert('Please allow pop-ups to print receipts');
+        return;
+    }
+
+    // Write the receipt content with monospace font styling
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Receipt</title>
+            <style>
+                @page {
+                    size: 80mm auto;
+                    margin: 0;
+                }
+                body {
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 12px;
+                    line-height: 1.2;
+                    white-space: pre;
+                    margin: 0;
+                    padding: 10px;
+                    width: 80mm;
+                }
+                @media print {
+                    body {
+                        padding: 0;
+                    }
+                }
+            </style>
+        </head>
+        <body>${cleanedText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
+        </html>
+    `);
+    printWindow.document.close();
+
+    // Wait for content to load, then print
+    printWindow.onload = () => {
+        printWindow.focus();
+        printWindow.print();
+        // Close after a delay to allow print dialog to open
+        setTimeout(() => {
+            printWindow.close();
+        }, 1000);
+    };
+
+    // Fallback if onload doesn't fire
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
 }
 
 // Type declarations for window extensions

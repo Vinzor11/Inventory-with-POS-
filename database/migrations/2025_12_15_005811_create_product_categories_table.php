@@ -11,11 +11,6 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Skip if table already exists
-        if (Schema::hasTable('product_categories')) {
-            return;
-        }
-
         Schema::create('product_categories', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();

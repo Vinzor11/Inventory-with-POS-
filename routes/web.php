@@ -29,6 +29,13 @@ Route::post('weigh-ins-landing/{transaction}/mark-as-paid', [\App\Http\Controlle
 // Weigh-In Receipt Printing (no auth required - for weigh-ins landing page)
 Route::get('receipts/weigh-ins/{transaction}', [\App\Http\Controllers\ReceiptController::class, 'weighInReceipt'])->name('receipts.weigh-ins');
 
+// Network Printer API (no auth required - for tablet printing)
+Route::prefix('api/print')->name('api.print.')->group(function () {
+    Route::post('network', [\App\Http\Controllers\NetworkPrintController::class, 'print'])->name('network');
+    Route::post('network/test-connection', [\App\Http\Controllers\NetworkPrintController::class, 'testConnection'])->name('network.test-connection');
+    Route::post('network/test-print', [\App\Http\Controllers\NetworkPrintController::class, 'testPrint'])->name('network.test-print');
+});
+
 // POS System (no auth required - uses PIN for checkout)
 Route::get('pos', [PosController::class, 'index'])->name('pos');
 Route::post('pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
