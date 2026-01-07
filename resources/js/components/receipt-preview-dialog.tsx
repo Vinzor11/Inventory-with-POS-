@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -8,7 +8,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, X } from 'lucide-react';
+import { Printer, X, Share2 } from 'lucide-react';
+import { shareReceipt, canShare } from '@/lib/receipt-print';
 
 interface ReceiptPreviewDialogProps {
     isOpen: boolean;
@@ -26,6 +27,13 @@ export function ReceiptPreviewDialog({
     title = 'Receipt Preview',
 }: ReceiptPreviewDialogProps) {
     const [isPrinting, setIsPrinting] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
+    const [showShareOption, setShowShareOption] = useState(false);
+
+    useEffect(() => {
+        // Check if share is available (Android)
+        setShowShareOption(canShare());
+    }, []);
 
     const handleConfirm = async () => {
         setIsPrinting(true);
@@ -37,6 +45,20 @@ export function ReceiptPreviewDialog({
             alert('Failed to print receipt. Please try again or contact support.');
         } finally {
             setIsPrinting(false);
+        }
+    };
+
+    const handleShare = async () => {
+        setIsSharing(true);
+        try {
+            const shared = await shareReceipt(receiptText);
+            if (shared) {
+                onClose();
+            }
+        } catch (error) {
+            console.error('Share failed:', error);
+        } finally {
+            setIsSharing(false);
         }
     };
 
@@ -71,18 +93,29 @@ export function ReceiptPreviewDialog({
                     </div>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="flex-col sm:flex-row gap-2">
                     <Button
                         variant="outline"
                         onClick={onClose}
-                        disabled={isPrinting}
+                        disabled={isPrinting || isSharing}
                     >
                         <X className="h-4 w-4 mr-2" />
                         Cancel
                     </Button>
+                    {showShareOption && (
+                        <Button
+                            variant="secondary"
+                            onClick={handleShare}
+                            disabled={isPrinting || isSharing}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                            <Share2 className="h-4 w-4 mr-2" />
+                            {isSharing ? 'Sharing...' : 'Share to RawBT'}
+                        </Button>
+                    )}
                     <Button
                         onClick={handleConfirm}
-                        disabled={isPrinting}
+                        disabled={isPrinting || isSharing}
                         className="bg-blue-600 hover:bg-blue-700"
                     >
                         <Printer className="h-4 w-4 mr-2" />

@@ -422,6 +422,52 @@ function downloadReceipt(receiptText: string): void {
 }
 
 /**
+ * Share receipt text via Android share menu (for RawBT)
+ * This is the best method for Android tablets with thermal printers
+ */
+export async function shareReceipt(receiptText: string): Promise<boolean> {
+    // Clean the receipt text (remove ESC/POS commands for display)
+    const cleanedText = receiptText
+        .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+        .replace(/\x1B\x40/g, '')
+        .replace(/\x1B\x33[\x00-\xFF]/g, '')
+        .replace(/\x1D\x56\x00/g, '')
+        .replace(/\x1B\x61/g, '')
+        .replace(/\x1B\x45\x01/g, '')
+        .replace(/\x1B\x45\x00/g, '')
+        .replace(/\x1B\x47\x01/g, '')
+        .replace(/\x1B\x47\x00/g, '')
+        .replace(/\x1D\x21\x11/g, '')
+        .replace(/\x1D\x21\x00/g, '')
+        .replace(/[\x00-\x08\x0B-\x1C\x1E-\x1F\x7F]/g, '')
+        .replace(/^\n+/, '');
+
+    // Check if Web Share API is available (Android Chrome supports this)
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'Receipt',
+                text: cleanedText,
+            });
+            return true;
+        } catch (error) {
+            // User cancelled or share failed
+            console.warn('Share failed:', error);
+            return false;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Check if sharing is supported (for Android)
+ */
+export function canShare(): boolean {
+    return typeof navigator !== 'undefined' && !!navigator.share;
+}
+
+/**
  * Print using browser's built-in print dialog
  * This is the best fallback for tablets and mobile devices
  */
