@@ -44,10 +44,21 @@ import com.hims.nativeapp.util.formatPeso
 fun DashboardScreen(
     dashboard: DashboardData?,
     inventoryDashboard: InventoryDashboardData? = null,
+    isRefreshing: Boolean = false,
+    accessDenied: Boolean = false,
+    statusMessage: String? = null,
     onOpenSalesReport: () -> Unit = {},
     onOpenWeighReport: () -> Unit = {},
 ) {
     if (dashboard == null) {
+        val message =
+            when {
+                isRefreshing -> "Loading dashboard..."
+                accessDenied -> "Dashboard is not available for this account."
+                !statusMessage.isNullOrBlank() -> statusMessage
+                else -> "Dashboard data unavailable. Pull to refresh."
+            }
+
         Box(
             modifier =
                 Modifier
@@ -56,7 +67,7 @@ fun DashboardScreen(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "Dashboard is not available for this account.",
+                text = message,
                 color = Color(0xFF6B7280),
                 fontSize = 14.sp,
             )

@@ -560,6 +560,9 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         DashboardScreen(
                             dashboard = state.dashboardData,
                             inventoryDashboard = state.inventoryDashboard,
+                            isRefreshing = state.isRefreshing,
+                            accessDenied = state.dashboardAccessDenied,
+                            statusMessage = state.dashboardStatusMessage,
                             onOpenSalesReport = {
                                 viewModel.refreshSalesReport()
                                 showWeighReportScreen = false

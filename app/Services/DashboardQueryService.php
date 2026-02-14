@@ -318,12 +318,20 @@ class DashboardQueryService
             ->toArray();
 
         // Payment collection rate (paid vs unpaid sales)
+        $paymentsBySale = DB::table('payments')
+            ->select('sale_id')
+            ->selectRaw('SUM(amount) as paid_amount')
+            ->groupBy('sale_id');
+
         $paymentStats = DB::table('sales')
-            ->select(DB::raw("
-                SUM(CASE WHEN total <= (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payments.sale_id = sales.id) THEN 1 ELSE 0 END) as fully_paid,
-                SUM(CASE WHEN total > (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payments.sale_id = sales.id) AND (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payments.sale_id = sales.id) > 0 THEN 1 ELSE 0 END) as partially_paid,
-                SUM(CASE WHEN (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payments.sale_id = sales.id) = 0 THEN 1 ELSE 0 END) as unpaid
-            "))
+            ->leftJoinSub($paymentsBySale, 'payment_totals', function ($join): void {
+                $join->on('payment_totals.sale_id', '=', 'sales.id');
+            })
+            ->selectRaw("
+                SUM(CASE WHEN sales.total <= COALESCE(payment_totals.paid_amount, 0) THEN 1 ELSE 0 END) as fully_paid,
+                SUM(CASE WHEN sales.total > COALESCE(payment_totals.paid_amount, 0) AND COALESCE(payment_totals.paid_amount, 0) > 0 THEN 1 ELSE 0 END) as partially_paid,
+                SUM(CASE WHEN COALESCE(payment_totals.paid_amount, 0) = 0 THEN 1 ELSE 0 END) as unpaid
+            ")
             ->whereDate('created_at', '>=', $thisMonth->format('Y-m-d'))
             ->first();
 

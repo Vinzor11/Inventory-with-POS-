@@ -181,6 +181,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 userRole = role,
                 products = snapshot.posSeed,
                 inventoryCategories = cachedCategories,
+                dashboardAccessDenied = false,
+                dashboardStatusMessage = null,
                 errorMessage = offlineMessage,
             )
     }
@@ -2465,7 +2467,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshDashboard() {
         viewModelScope.launch {
-            uiState = uiState.copy(isRefreshing = true, errorMessage = null)
+            uiState =
+                uiState.copy(
+                    isRefreshing = true,
+                    errorMessage = null,
+                    dashboardAccessDenied = false,
+                    dashboardStatusMessage = null,
+                )
             try {
                 val currentUser = api.getAuthenticatedUser().data
                 val canonicalRole = canonicalizeRole(currentUser.role)
@@ -2484,6 +2492,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         uiState.copy(
                             isRefreshing = false,
                             dashboardData = null,
+                            dashboardAccessDenied = true,
+                            dashboardStatusMessage = "Dashboard is not available for this account.",
                             errorMessage = "Dashboard is available to administrators only.",
                         )
                     return@launch
@@ -2510,6 +2520,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     uiState.copy(
                         dashboardData = dashboardData,
                         inventoryDashboard = inventoryDashboard,
+                        dashboardAccessDenied = false,
+                        dashboardStatusMessage = null,
                         isRefreshing = false,
                         errorMessage = nonBlockingError,
                     )
@@ -2519,10 +2531,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         uiState.copy(
                             isRefreshing = false,
                             dashboardData = null,
+                            dashboardAccessDenied = true,
+                            dashboardStatusMessage = "Dashboard is not available for this account.",
                             errorMessage = "Dashboard is available to administrators only.",
                         )
                 } else {
-                    uiState = uiState.copy(isRefreshing = false, errorMessage = networkErrorMessage(e))
+                    uiState =
+                        uiState.copy(
+                            isRefreshing = false,
+                            dashboardAccessDenied = false,
+                            dashboardStatusMessage = "Dashboard data unavailable. Pull to refresh.",
+                            errorMessage = networkErrorMessage(e),
+                        )
                 }
             }
         }

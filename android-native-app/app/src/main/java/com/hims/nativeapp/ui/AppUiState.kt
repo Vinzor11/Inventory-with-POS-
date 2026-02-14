@@ -80,6 +80,8 @@ data class AppUiState(
     val cookedCopraStockSummary: CookedCopraStockSummary? = null,
     val inventoryMovements: List<InventoryMovement> = emptyList(),
     val dashboardData: DashboardData? = null,
+    val dashboardAccessDenied: Boolean = false,
+    val dashboardStatusMessage: String? = null,
     val salesReportData: SalesReportData? = null,
     val weighReportTransactions: List<WeighInTransaction> = emptyList(),
     val productionRuns: List<ProductionRun> = emptyList(),
