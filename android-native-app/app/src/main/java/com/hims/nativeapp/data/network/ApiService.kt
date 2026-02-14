@@ -94,8 +94,8 @@ interface ApiService {
         @Query("category_id") categoryId: Int? = null,
         @Query("active_filter") activeFilter: String? = null,
         @Query("page") page: Int = 1,
-        @Query("compact") compact: Boolean = true,
-        @Query("active_only") activeOnly: Boolean? = true,
+        @Query("compact") compact: Int = 1,
+        @Query("active_only") activeOnly: Int? = null,
     ): Response<ApiEnvelope<SimplePaginatedData<CompactProductRow>>>
 
     @POST("api/products")

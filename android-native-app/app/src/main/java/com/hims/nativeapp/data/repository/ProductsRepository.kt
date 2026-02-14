@@ -127,8 +127,8 @@ class ProductsRepository(
                     categoryId = query.categoryId,
                     activeFilter = query.activeFilter,
                     page = page,
-                    compact = true,
-                    activeOnly = query.activeFilter == "active",
+                    compact = 1,
+                    activeOnly = if (query.activeFilter == "active") 1 else null,
                 )
 
                 if (!response.isSuccessful || response.body() == null) {

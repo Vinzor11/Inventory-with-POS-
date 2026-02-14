@@ -221,9 +221,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         uiState = uiState.copy(selectedTab = tab, searchQuery = "")
         when (tab) {
+            AppTab.SALES -> {
+                if (uiState.sales.isEmpty()) {
+                    refreshSales()
+                }
+            }
             AppTab.DELIVERY -> {
                 if (uiState.deliveryQueue.isEmpty()) {
                     refreshDeliveries()
+                }
+            }
+            AppTab.WEIGH -> {
+                if (uiState.weighIns.isEmpty()) {
+                    refreshWeighIns()
                 }
             }
             AppTab.INVENTORY -> {
@@ -232,7 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             AppTab.DELIVERY_MENU -> {
-                if (uiState.deliveries.isEmpty()) {
+                if (uiState.deliveries.isEmpty() || uiState.deliveryQueue.isEmpty()) {
                     refreshDeliveries()
                 }
             }
@@ -2209,12 +2219,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    productMenuItems = api.getProducts(perPage = 200).data.data
+                    inventoryCategories = api.getPosCategories().data
                 } catch (e: Exception) {
                     if (isUnauthorized(e)) {
                         throw e
                     }
-                    nonBlockingErrors.add("Products menu failed to load. ${networkErrorMessage(e)}")
+                    nonBlockingErrors.add("Product categories failed to load. ${networkErrorMessage(e)}")
                 }
 
                 try {
@@ -2456,10 +2466,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uiState = uiState.copy(isRefreshing = true, errorMessage = null)
             try {
                 val categories = api.getPosCategories().data
-                val products = api.getProducts(perPage = 200).data.data
                 uiState =
                     uiState.copy(
-                        productMenuItems = products,
                         inventoryCategories = categories,
                         isRefreshing = false,
                     )

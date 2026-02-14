@@ -20,9 +20,9 @@ class ProductController extends Controller
             'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
             'search' => ['nullable', 'string', 'max:80'],
             'category_id' => ['nullable', 'integer'],
-            'active_only' => ['nullable', 'boolean'],
+            'active_only' => ['nullable', 'in:1,0,true,false'],
             'active_filter' => ['nullable', 'in:all,active,inactive'],
-            'compact' => ['nullable', 'boolean'],
+            'compact' => ['nullable', 'in:1,0,true,false'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 30);
@@ -30,7 +30,7 @@ class ProductController extends Controller
         $categoryId = $validated['category_id'] ?? null;
         $activeOnly = $request->boolean('active_only');
         $activeFilter = strtolower((string) ($validated['active_filter'] ?? ($activeOnly ? 'active' : 'all')));
-        $compact = (bool) ($validated['compact'] ?? false);
+        $compact = $request->boolean('compact');
 
         if ($compact) {
             $query = ProductVariant::query()
