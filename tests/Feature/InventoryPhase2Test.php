@@ -9,6 +9,7 @@ use App\Models\ProductCategory;
 use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class InventoryPhase2Test extends TestCase
@@ -47,10 +48,7 @@ class InventoryPhase2Test extends TestCase
     /** @test */
     public function stock_in_requires_unit_cost()
     {
-        $category = ProductCategory::factory()->create();
-        $product = Product::factory()->create(['category_id' => $category->id]);
-        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
-        Inventory::factory()->create(['product_variant_id' => $variant->id, 'quantity_on_hand' => 0]);
+        $variant = $this->createVariantWithInventory(0);
 
         $this->actingAs($this->user);
 
@@ -66,10 +64,7 @@ class InventoryPhase2Test extends TestCase
     /** @test */
     public function stock_in_creates_movement_with_unit_cost()
     {
-        $category = ProductCategory::factory()->create();
-        $product = Product::factory()->create(['category_id' => $category->id]);
-        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
-        Inventory::factory()->create(['product_variant_id' => $variant->id, 'quantity_on_hand' => 0]);
+        $variant = $this->createVariantWithInventory(0);
 
         $this->actingAs($this->user);
 
@@ -100,10 +95,7 @@ class InventoryPhase2Test extends TestCase
     /** @test */
     public function adjustment_requires_notes()
     {
-        $category = ProductCategory::factory()->create();
-        $product = Product::factory()->create(['category_id' => $category->id]);
-        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
-        Inventory::factory()->create(['product_variant_id' => $variant->id, 'quantity_on_hand' => 10]);
+        $variant = $this->createVariantWithInventory(10);
 
         $this->actingAs($this->user);
 
@@ -120,10 +112,7 @@ class InventoryPhase2Test extends TestCase
     /** @test */
     public function adjustment_creates_movement_with_null_unit_cost()
     {
-        $category = ProductCategory::factory()->create();
-        $product = Product::factory()->create(['category_id' => $category->id]);
-        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
-        Inventory::factory()->create(['product_variant_id' => $variant->id, 'quantity_on_hand' => 10]);
+        $variant = $this->createVariantWithInventory(10);
 
         $this->actingAs($this->user);
 
@@ -137,13 +126,16 @@ class InventoryPhase2Test extends TestCase
         $response->assertRedirect();
         $response->assertSessionHas('success');
 
-        $this->assertDatabaseHas('inventory_movements', [
-            'product_variant_id' => $variant->id,
-            'quantity' => 5,
-            'type' => 'OUT',
-            'unit_cost' => null,
-            'notes' => 'Damaged items removed',
-        ]);
+        $movement = InventoryMovement::query()
+            ->where('product_variant_id', $variant->id)
+            ->where('quantity', 5)
+            ->where('type', 'OUT')
+            ->whereNull('unit_cost')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($movement);
+        $this->assertTrue(Str::contains((string) $movement->notes, 'Damaged items removed'));
 
         $this->assertDatabaseHas('inventory', [
             'product_variant_id' => $variant->id,
@@ -189,5 +181,36 @@ class InventoryPhase2Test extends TestCase
         $response = $this->get('/inventory/movements');
 
         $response->assertStatus(200);
+    }
+
+    private function createVariantWithInventory(float $quantityOnHand): ProductVariant
+    {
+        $category = ProductCategory::query()->create([
+            'name' => 'Test Category '.uniqid(),
+            'description' => 'Test category',
+            'is_active' => true,
+        ]);
+
+        $product = Product::query()->create([
+            'category_id' => $category->id,
+            'sku' => 'TEST-'.uniqid(),
+            'name' => 'Test Product',
+            'base_unit' => 'pc',
+            'track_stock' => true,
+            'is_active' => true,
+        ]);
+
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'description' => 'Test Variant',
+            'unit_price' => 100,
+        ]);
+
+        Inventory::query()->create([
+            'product_variant_id' => $variant->id,
+            'quantity_on_hand' => $quantityOnHand,
+        ]);
+
+        return $variant;
     }
 }

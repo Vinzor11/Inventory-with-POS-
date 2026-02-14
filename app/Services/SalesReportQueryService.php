@@ -16,12 +16,22 @@ use Illuminate\Support\Facades\Schema;
  */
 class SalesReportQueryService
 {
+    private ?bool $isSqlite = null;
     private ?bool $salesHasSaleDateColumn = null;
     private ?bool $saleItemsHasCanceledQuantityColumn = null;
     private ?bool $saleItemsHasUnitCostColumn = null;
     private ?bool $saleItemsHasTotalCostColumn = null;
     private ?bool $saleItemsHasProfitColumn = null;
     private ?bool $productVariantsHasPurchasePriceColumn = null;
+
+    private function isSqlite(): bool
+    {
+        if ($this->isSqlite === null) {
+            $this->isSqlite = DB::getDriverName() === 'sqlite';
+        }
+
+        return $this->isSqlite;
+    }
 
     private function saleDateExpression(string $table = 'sales'): string
     {
@@ -84,6 +94,10 @@ class SalesReportQueryService
     private function remainingQuantityExpression(): string
     {
         if ($this->saleItemsHasCanceledQuantityColumn()) {
+            if ($this->isSqlite()) {
+                return 'MAX(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0), 0)';
+            }
+
             return 'GREATEST(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0), 0)';
         }
 
@@ -365,4 +379,3 @@ class SalesReportQueryService
             ->get();
     }
 }
-

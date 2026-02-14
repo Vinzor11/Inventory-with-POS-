@@ -229,8 +229,12 @@ class InventoryMovementReportQueryService
             }
         }
 
+        $profitPerUnitExpression = DB::getDriverName() === 'sqlite'
+            ? 'MAX(COALESCE(product_variants.unit_price, 0) - COALESCE(NULLIF(product_variants.purchase_price, 0), COALESCE(product_variants.unit_price, 0)), 0)'
+            : 'GREATEST(COALESCE(product_variants.unit_price, 0) - COALESCE(NULLIF(product_variants.purchase_price, 0), COALESCE(product_variants.unit_price, 0)), 0)';
+
         $totalProfit = $query
-            ->selectRaw('COALESCE(SUM(inventory.quantity_on_hand * GREATEST(COALESCE(product_variants.unit_price, 0) - COALESCE(NULLIF(product_variants.purchase_price, 0), COALESCE(product_variants.unit_price, 0)), 0)), 0) as total_profit')
+            ->selectRaw("COALESCE(SUM(inventory.quantity_on_hand * {$profitPerUnitExpression}), 0) as total_profit")
             ->value('total_profit');
 
         return (float) ($totalProfit ?? 0);

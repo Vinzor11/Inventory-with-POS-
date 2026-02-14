@@ -35,11 +35,13 @@ class ProductionInventoryWorkflowTest extends TestCase
             'role' => 'admin',
         ]);
 
-        $category = ProductCategory::query()->create([
-            'name' => 'Agricultural Products',
-            'description' => 'Test category',
-            'is_active' => true,
-        ]);
+        $category = ProductCategory::query()->firstOrCreate(
+            ['name' => 'Agricultural Products'],
+            [
+                'description' => 'Test category',
+                'is_active' => true,
+            ]
+        );
 
         $this->coconutVariant = $this->createVariant($category->id, 'COCONUT', 'Coconut', 'pcs', false);
         $this->uncookedVariant = $this->createVariant($category->id, 'UNCOOKED-COPRA', 'Uncooked Copra', 'kg', true);
@@ -466,28 +468,34 @@ class ProductionInventoryWorkflowTest extends TestCase
         string $unit,
         bool $isWeighed
     ): ProductVariant {
-        $product = Product::query()->create([
-            'category_id' => $categoryId,
-            'name' => $name,
-            'sku' => $sku,
-            'base_unit' => $unit,
-            'official_stock_unit' => $unit,
-            'is_weighed' => $isWeighed,
-            'track_stock' => true,
-            'is_active' => true,
-        ]);
+        $product = Product::query()->firstOrCreate(
+            ['sku' => $sku],
+            [
+                'category_id' => $categoryId,
+                'name' => $name,
+                'base_unit' => $unit,
+                'official_stock_unit' => $unit,
+                'is_weighed' => $isWeighed,
+                'track_stock' => true,
+                'is_active' => true,
+            ]
+        );
 
-        $variant = ProductVariant::query()->create([
-            'product_id' => $product->id,
-            'description' => $name,
-            'unit_price' => 0,
-            'purchase_price' => 0,
-        ]);
+        $variant = ProductVariant::query()->firstOrCreate(
+            [
+                'product_id' => $product->id,
+                'description' => $name,
+            ],
+            [
+                'unit_price' => 0,
+                'purchase_price' => 0,
+            ]
+        );
 
-        Inventory::query()->create([
-            'product_variant_id' => $variant->id,
-            'quantity_on_hand' => 0,
-        ]);
+        Inventory::query()->firstOrCreate(
+            ['product_variant_id' => $variant->id],
+            ['quantity_on_hand' => 0]
+        );
 
         return $variant;
     }
