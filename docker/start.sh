@@ -29,11 +29,22 @@ php artisan optimize:clear
 echo "Running migrations..."
 php artisan migrate --force
 
+echo "Running bootstrap seeders..."
+PRODUCT_COUNT=$(php artisan tinker --execute="echo \\App\\Models\\Product::query()->count();" | tr -d '\r\n')
+if [[ "$PRODUCT_COUNT" == "0" ]]; then
+  echo "No products found, running ProductSeeder..."
+  php artisan db:seed --class=Database\\Seeders\\ProductSeeder --force --no-interaction
+fi
+
+echo "Ensuring agricultural products and weigh-in prices exist..."
+php artisan db:seed --class=Database\\Seeders\\AgriculturalProductsSeeder --force --no-interaction
+php artisan db:seed --class=Database\\Seeders\\WeighInPriceSeeder --force --no-interaction
+
 echo "Creating storage link..."
 php artisan storage:link || true
 
 echo "Running ProductImageSeeder..."
-php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force
+php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force --no-interaction
 
 echo "Rebuilding optimized caches with runtime environment..."
 php artisan config:cache
