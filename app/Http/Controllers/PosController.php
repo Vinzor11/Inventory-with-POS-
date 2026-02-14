@@ -16,7 +16,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -83,21 +82,8 @@ class PosController extends Controller
      */
     public function checkout(SaleCheckoutRequest $request): RedirectResponse
     {
-        // Verify PIN - check against all users to find cashier
-        // PIN is stored in a separate hashed field, not the password
-        $cashier = null;
-        $users = User::all();
-        
-        foreach ($users as $user) {
-            // Access the PIN directly from attributes (bypasses hidden attribute)
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            
-            // Verify the PIN if user has one set
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                $cashier = $user;
-                break;
-            }
-        }
+        // Verify PIN against active users only.
+        $cashier = User::findActiveByPin($request->pin);
 
         if (!$cashier) {
             throw ValidationException::withMessages([

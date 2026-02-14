@@ -19,6 +19,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { formatCurrency as formatCurrencyUtil, formatNumber } from '@/lib/format-currency';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { RecordActionsSheet, type RecordActionItem } from '@/components/mobile/record-actions-sheet';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -130,7 +132,7 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
     });
 
     // Check if user is admin
-    const isAdmin = (auth.user as any)?.role === 'admin';
+    const isAdmin = auth.user?.role === 'admin';
 
     // Helper function to safely format numbers and prevent NaN
     const safeNumber = (value: any, defaultValue: number = 0): number => {
@@ -182,6 +184,11 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
     };
 
     const handleVoid = () => {
+        if (!isAdmin) {
+            toast.error('Only administrators can void sales.');
+            return;
+        }
+
         if (!canVoid()) {
             toast.error('This sale cannot be voided. It may have deliveries, refunds, or is already voided.');
             return;
@@ -297,6 +304,11 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
     };
 
     const handleCancelItem = (item: SaleItem) => {
+        if (sale.is_for_delivery && !isAdmin) {
+            toast.error('Only administrators can cancel items for delivery orders.');
+            return;
+        }
+
         setCancelItemModal({ isOpen: true, item });
         const maxCancelable = calculateMaxCancelable(item);
         setCancelFormData({
@@ -316,6 +328,11 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
     const handleCancelItemConfirm = () => {
         if (!cancelItemModal.item) return;
 
+        if (sale.is_for_delivery && !isAdmin) {
+            toast.error('Only administrators can cancel items for delivery orders.');
+            return;
+        }
+
         postCancel(`/sales/${sale.id}/cancel-item`, {
             onSuccess: () => {
                 // Flash message will be shown automatically
@@ -331,6 +348,10 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
     };
 
     const canCancelItem = (item: SaleItem): boolean => {
+        if (sale.is_for_delivery && !isAdmin) {
+            return false;
+        }
+
         // Handle both snake_case and camelCase from API
         const deliveredQty = Number(item.delivered_quantity ?? item.deliveredQuantity ?? 0);
         const canceledQty = Number(item.canceled_quantity ?? item.canceledQuantity ?? 0);
@@ -355,7 +376,7 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <h1 className="text-2xl font-bold">Sale {sale.sale_number}</h1>
+                        <h1 className="hidden text-2xl font-bold md:block">Sale {sale.sale_number}</h1>
                     </div>
                     <div className="flex items-center gap-2">
                         {sale.status === 'VOIDED' ? (
@@ -383,7 +404,7 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
                                     </Button>
                                 )}
                                 {/* Show Refund button if sale is paid or partially refunded, but not fully refunded, and not voided */}
-                                {sale.status !== 'VOIDED' && (sale.payment_status === 'FULLY_PAID' || sale.payment_status === 'PARTIALLY_REFUNDED') && sale.payment_status !== 'REFUNDED' && (
+                                {isAdmin && sale.status !== 'VOIDED' && (sale.payment_status === 'FULLY_PAID' || sale.payment_status === 'PARTIALLY_REFUNDED') && sale.payment_status !== 'REFUNDED' && (
                                     <Button
                                         variant="default"
                                         size="sm"
@@ -395,7 +416,7 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
                                     </Button>
                                 )}
                                 {/* Void button: only if sale can be voided */}
-                                {canVoid() && (
+                                {isAdmin && canVoid() && (
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -589,23 +610,76 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
                     <div className="p-6 border-b border-sidebar-border/70">
                         <h2 className="text-lg font-semibold">Items ({sale.items.length})</h2>
                     </div>
-                    <div className="overflow-x-auto">
+                    <div className="space-y-3 p-4 md:hidden">
+                        {sale.items.map((item) => {
+                            const productVariant = item.product_variant || item.productVariant;
+                            const product = productVariant?.product;
+                            if (!productVariant || !product) {
+                                return null;
+                            }
+
+                            const deliveredQty = Number(item.delivered_quantity ?? item.deliveredQuantity ?? 0);
+                            const canceledQty = Number(item.canceled_quantity ?? item.canceledQuantity ?? 0);
+                            const itemStatus = item.item_status ?? item.itemStatus ?? 'ACTIVE';
+                            const isCanceled = itemStatus === 'CANCELED';
+                            const isPartiallyAdjusted = itemStatus === 'PARTIAL_ADJUSTED';
+                            const canCancel = canCancelItem(item)
+                                && sale.status !== 'VOIDED'
+                                && sale.status !== 'REFUNDED'
+                                && sale.status !== 'PARTIALLY_REFUNDED';
+
+                            const actions: RecordActionItem[] = canCancel
+                                ? [{
+                                    key: 'cancel',
+                                    label: 'Cancel Item',
+                                    icon: <X className="h-4 w-4" />,
+                                    onClick: () => handleCancelItem(item),
+                                    destructive: true,
+                                }]
+                                : [];
+
+                            return (
+                                <MobileRecordCard
+                                    key={`m-item-${item.id}`}
+                                    title={product.name}
+                                    subtitle={productVariant.description}
+                                    value={formatCurrency(item.line_total)}
+                                    badges={[
+                                        isCanceled
+                                            ? { label: 'Canceled', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' }
+                                            : isPartiallyAdjusted
+                                              ? { label: 'Partial Adjusted', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200' }
+                                              : { label: 'Active', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' },
+                                    ]}
+                                    footer={
+                                        canCancel ? (
+                                            <div className="flex items-center justify-end">
+                                                <RecordActionsSheet title={product.name} description="Item actions" actions={actions} />
+                                            </div>
+                                        ) : undefined
+                                    }
+                                >
+                                    <MobileRecordRow label="Quantity" value={formatNumber(safeNumber(item.quantity))} />
+                                    <MobileRecordRow label="Delivered" value={formatNumber(safeNumber(deliveredQty))} />
+                                    <MobileRecordRow
+                                        label="Canceled"
+                                        value={formatNumber(safeNumber(canceledQty))}
+                                        valueClassName={canceledQty > 0 ? 'text-red-600 font-medium' : undefined}
+                                    />
+                                    <MobileRecordRow label="Unit Price" value={formatCurrency(item.unit_price)} />
+                                </MobileRecordCard>
+                            );
+                        })}
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
                         {(() => {
                             // Check if any item can be canceled (to show/hide Actions column)
                             const hasCancelableItems = sale.items.some((item) => {
-                                const deliveredQty = Number(item.delivered_quantity ?? item.deliveredQuantity ?? 0);
-                                const canceledQty = Number(item.canceled_quantity ?? item.canceledQuantity ?? 0);
-                                const totalQty = Number(item.quantity);
-                                const itemStatus = (item.item_status ?? item.itemStatus ?? 'ACTIVE');
-                                
-                                // Item cannot be canceled if status is CANCELED
-                                if (itemStatus === 'CANCELED') {
-                                    return false;
-                                }
-                                
-                                const undeliveredQty = totalQty - deliveredQty - canceledQty;
-                                const canCancelItem = undeliveredQty > 0;
-                                return canCancelItem && sale.status !== 'VOIDED' && sale.status !== 'REFUNDED' && sale.status !== 'PARTIALLY_REFUNDED';
+                                return canCancelItem(item)
+                                    && sale.status !== 'VOIDED'
+                                    && sale.status !== 'REFUNDED'
+                                    && sale.status !== 'PARTIALLY_REFUNDED';
                             });
 
                             return (
@@ -729,7 +803,38 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
                                 View All Refunds
                             </Button>
                         </div>
-                        <div className="overflow-x-auto">
+                        <div className="space-y-3 p-4 md:hidden">
+                            {sale.refunds.map((refund) => {
+                                const processedBy = refund.processed_by || refund.processedBy;
+                                const refundAmount = Number(refund.refund_amount) || 0;
+
+                                return (
+                                    <MobileRecordCard
+                                        key={`m-refund-${refund.id}`}
+                                        title={refund.type === 'full' ? 'Full Refund' : 'Partial Refund'}
+                                        subtitle={processedBy?.name || 'Unknown'}
+                                        value={formatCurrency(refundAmount)}
+                                        badges={[
+                                            refund.type === 'full'
+                                                ? { label: 'Full', className: 'bg-red-100 text-red-800' }
+                                                : { label: 'Partial', className: 'bg-orange-100 text-orange-800' },
+                                        ]}
+                                    >
+                                        <MobileRecordRow
+                                            label="Date"
+                                            value={refund.created_at ? new Date(refund.created_at).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric',
+                                            }) : '-'}
+                                        />
+                                        <MobileRecordRow label="Reason" value={refund.reason || '-'} />
+                                    </MobileRecordCard>
+                                );
+                            })}
+                        </div>
+
+                        <div className="hidden overflow-x-auto md:block">
                             <table className="w-full">
                                 <thead className="bg-muted/50">
                                     <tr>
@@ -807,55 +912,87 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
                         </div>
                         <div className="overflow-x-auto">
                             {sale.payments && sale.payments.length > 0 ? (
-                                <table className="w-full">
-                                    <thead className="bg-muted/50">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-sm font-semibold">Date & Time</th>
-                                            <th className="px-6 py-3 text-left text-sm font-semibold">Amount</th>
-                                            <th className="px-6 py-3 text-left text-sm font-semibold">Method</th>
-                                            <th className="px-6 py-3 text-left text-sm font-semibold">Received By</th>
-                                            <th className="px-6 py-3 text-left text-sm font-semibold">Notes</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-sidebar-border/70">
+                                <>
+                                    <div className="space-y-3 p-4 md:hidden">
                                         {sale.payments.map((payment) => {
-                                            // Handle missing received_by relationship
                                             const receivedBy = payment.received_by || payment.receivedBy;
                                             const amount = Number(payment.amount) || 0;
-                                            
                                             return (
-                                            <tr key={payment.id} className="hover:bg-muted/30">
-                                                <td className="px-6 py-4">
-                                                    <div className="text-sm">
-                                                        {payment.received_at ? new Date(payment.received_at).toLocaleString() : '-'}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className={`text-sm font-semibold ${
-                                                        amount < 0 ? 'text-red-600' : 'text-green-600'
-                                                    }`}>
-                                                        {amount < 0 ? '-' : '+'}{formatCurrency(Math.abs(amount))}
-                                                    </div>
-                                                    {amount < 0 && (
-                                                        <div className="text-xs text-red-600">Refund</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="text-sm">{getPaymentMethodLabel(payment.payment_method || 'cash')}</div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="text-sm">{receivedBy?.name || 'Unknown'}</div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="text-sm text-muted-foreground">
-                                                        {payment.notes || '-'}
-                                                    </div>
-                                                </td>
-                                            </tr>
+                                                <MobileRecordCard
+                                                    key={`m-payment-${payment.id}`}
+                                                    title={amount < 0 ? 'Refund' : 'Payment'}
+                                                    subtitle={getPaymentMethodLabel(payment.payment_method || 'cash')}
+                                                    value={`${amount < 0 ? '-' : '+'}${formatCurrency(Math.abs(amount))}`}
+                                                    badges={[
+                                                        amount < 0
+                                                            ? { label: 'Refund', className: 'bg-red-100 text-red-600' }
+                                                            : { label: 'Payment', className: 'bg-green-100 text-green-600' },
+                                                    ]}
+                                                >
+                                                    <MobileRecordRow
+                                                        label="Date"
+                                                        value={payment.received_at ? new Date(payment.received_at).toLocaleDateString('en-US', {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric',
+                                                        }) : '-'}
+                                                    />
+                                                    <MobileRecordRow label="Received By" value={receivedBy?.name || 'Unknown'} />
+                                                    <MobileRecordRow label="Notes" value={payment.notes || '-'} />
+                                                </MobileRecordCard>
                                             );
                                         })}
-                                    </tbody>
-                                </table>
+                                    </div>
+
+                                    <table className="hidden w-full md:table">
+                                        <thead className="bg-muted/50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-sm font-semibold">Date & Time</th>
+                                                <th className="px-6 py-3 text-left text-sm font-semibold">Amount</th>
+                                                <th className="px-6 py-3 text-left text-sm font-semibold">Method</th>
+                                                <th className="px-6 py-3 text-left text-sm font-semibold">Received By</th>
+                                                <th className="px-6 py-3 text-left text-sm font-semibold">Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-sidebar-border/70">
+                                            {sale.payments.map((payment) => {
+                                                const receivedBy = payment.received_by || payment.receivedBy;
+                                                const amount = Number(payment.amount) || 0;
+
+                                                return (
+                                                    <tr key={payment.id} className="hover:bg-muted/30">
+                                                        <td className="px-6 py-4">
+                                                            <div className="text-sm">
+                                                                {payment.received_at ? new Date(payment.received_at).toLocaleString() : '-'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className={`text-sm font-semibold ${
+                                                                amount < 0 ? 'text-red-600' : 'text-green-600'
+                                                            }`}>
+                                                                {amount < 0 ? '-' : '+'}{formatCurrency(Math.abs(amount))}
+                                                            </div>
+                                                            {amount < 0 && (
+                                                                <div className="text-xs text-red-600">Refund</div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="text-sm">{getPaymentMethodLabel(payment.payment_method || 'cash')}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="text-sm">{receivedBy?.name || 'Unknown'}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="text-sm text-muted-foreground">
+                                                                {payment.notes || '-'}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </>
                             ) : (
                                 <div className="p-12 text-center text-muted-foreground">
                                     <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -1047,3 +1184,4 @@ export default function SalesShow({ sale, paymentSummary }: SalesShowProps) {
         </AppLayout>
     );
 }
+

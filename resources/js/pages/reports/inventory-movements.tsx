@@ -9,6 +9,8 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { FilterSheetButton } from '@/components/mobile/filter-sheet-button';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -125,19 +127,110 @@ export default function InventoryMovementsReport({ movements, variants, filters 
     // Get unique reasons from movements
     const uniqueReasons = Array.from(new Set(movements.data.map(m => m.reason))).filter(Boolean);
 
+    const hasActiveFilters =
+        Boolean(dateFrom)
+        || Boolean(dateTo)
+        || type !== 'all'
+        || variantId !== 'all'
+        || reason !== 'all';
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Inventory Movements Report" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Inventory Movements Report</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Inventory Movements Report</h1>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Complete audit trail of all inventory movements
                     </p>
                 </div>
 
                 {/* Filters */}
-                <div className="grid gap-4 md:grid-cols-5">
+                <div className="flex justify-end md:hidden">
+                    <FilterSheetButton title="Movement Filters" isActive={hasActiveFilters}>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date From</label>
+                            <Input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date To</label>
+                            <Input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Type</label>
+                            <Select
+                                value={type}
+                                onValueChange={(value) => {
+                                    setType(value);
+                                    triggerFetch({ type: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Types" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Types</SelectItem>
+                                    <SelectItem value="IN">Stock In</SelectItem>
+                                    <SelectItem value="OUT">Stock Out</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Product Variant</label>
+                            <Select
+                                value={variantId}
+                                onValueChange={(value) => {
+                                    setVariantId(value);
+                                    triggerFetch({ product_variant_id: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Variants" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Variants</SelectItem>
+                                    {variants.map((variant) => (
+                                        <SelectItem key={variant.id} value={String(variant.id)}>
+                                            {variant.product.name} - {variant.description}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Reason</label>
+                            <Select
+                                value={reason}
+                                onValueChange={(value) => {
+                                    setReason(value);
+                                    triggerFetch({ reason: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Reasons" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Reasons</SelectItem>
+                                    {uniqueReasons.map((r) => (
+                                        <SelectItem key={r} value={r}>
+                                            {r}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </FilterSheetButton>
+                </div>
+
+                <div className="hidden gap-4 md:grid md:grid-cols-5">
                     <div>
                         <label className="text-sm font-medium mb-1 block">Date From</label>
                         <Input
@@ -236,7 +329,35 @@ export default function InventoryMovementsReport({ movements, variants, filters 
                 </div>
 
                 {/* Table */}
-                <div className="rounded-lg border">
+                <div className="space-y-3 md:hidden">
+                    {movements.data.map((movement) => (
+                        <MobileRecordCard
+                            key={movement.id}
+                            title={movement.product_variant.product.name}
+                            subtitle={movement.product_variant.description}
+                            value={String(movement.quantity)}
+                            badges={[
+                                movement.type === 'IN'
+                                    ? { label: 'IN', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' }
+                                    : { label: 'OUT', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' },
+                            ]}
+                        >
+                            <MobileRecordRow
+                                label="Date"
+                                value={new Date(movement.created_at).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                })}
+                            />
+                            <MobileRecordRow label="Reason" value={movement.reason} />
+                            <MobileRecordRow label="Recorded By" value={movement.recorded_by.name} />
+                            <MobileRecordRow label="Notes" value={movement.notes || '-'} />
+                        </MobileRecordCard>
+                    ))}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
@@ -289,20 +410,40 @@ export default function InventoryMovementsReport({ movements, variants, filters 
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between">
-                    <RowsPerPageSelector
-                        value={parseInt(perPage, 10)}
-                        onChange={handlePerPageChange}
-                        options={PER_PAGE_OPTIONS}
-                    />
+                <div className="hidden md:block">
                     <Pagination
                         currentPage={movements.current_page}
-                        totalPages={movements.last_page}
+                        lastPage={movements.last_page}
+                        total={movements.total}
+                        perPage={movements.per_page}
                         onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
+                    />
+                </div>
+
+                <div className="md:hidden">
+                    <Pagination
+                        currentPage={movements.current_page}
+                        lastPage={movements.last_page}
+                        total={movements.total}
+                        perPage={movements.per_page}
+                        onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
                     />
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

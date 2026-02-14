@@ -170,7 +170,7 @@ export default function ProductsShow({ product }: ProductsShowProps) {
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold">{product.name}</h1>
+                        <h1 className="hidden text-2xl font-bold md:block">{product.name}</h1>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                             Product Details & Variants Management
                         </p>

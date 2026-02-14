@@ -1,10 +1,9 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { router } from '@inertiajs/react';
+import { type BreadcrumbItem, type SharedData } from '@/types';
 import { toast } from '@/lib/toast';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -21,6 +20,9 @@ interface WeighInPricesProps {
 }
 
 export default function WeighInPrices({ prices }: WeighInPricesProps) {
+    const { auth } = usePage<SharedData>().props;
+    const isAdmin = auth.user?.role === 'admin';
+
     const cookedCopraForm = useForm({
         price: prices.cooked_copra?.toString() || '0.00',
     });
@@ -35,6 +37,10 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
 
     const handleCookedCopraSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isAdmin) {
+            toast.error('Only administrators can update prices.');
+            return;
+        }
         cookedCopraForm.put(`/weigh-ins/prices/cooked_copra`, {
             onSuccess: () => {
                 // Flash message will be shown automatically
@@ -53,6 +59,10 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
 
     const handleUncookedCopraSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isAdmin) {
+            toast.error('Only administrators can update prices.');
+            return;
+        }
         uncookedCopraForm.put(`/weigh-ins/prices/uncooked_copra`, {
             onSuccess: () => {
                 // Flash message will be shown automatically
@@ -71,6 +81,10 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
 
     const handleCoconutSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isAdmin) {
+            toast.error('Only administrators can update prices.');
+            return;
+        }
         coconutForm.put(`/weigh-ins/prices/coconut`, {
             onSuccess: () => {
                 // Flash message will be shown automatically
@@ -92,8 +106,13 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
             <Head title="Weigh-In Prices" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Weigh-In Prices</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Weigh-In Prices</h1>
                 </div>
+                {!isAdmin && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        Prices are read-only. Only administrators can update weigh-in prices.
+                    </div>
+                )}
                 <div className="max-w-2xl space-y-6">
                     {/* Cooked Copra Price */}
                     <div className="rounded-lg border border-sidebar-border/70 p-6 dark:border-sidebar-border">
@@ -108,13 +127,14 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
                                     min="0.01"
                                     value={cookedCopraForm.data.price}
                                     onChange={(e) => cookedCopraForm.setData('price', e.target.value)}
+                                    disabled={!isAdmin}
                                     required
                                 />
                                 {cookedCopraForm.errors.price && (
                                     <p className="text-sm text-red-600 mt-1">{cookedCopraForm.errors.price}</p>
                                 )}
                             </div>
-                            <Button type="submit" disabled={cookedCopraForm.processing}>
+                            <Button type="submit" disabled={!isAdmin || cookedCopraForm.processing}>
                                 {cookedCopraForm.processing ? 'Updating...' : 'Update Cooked Copra Price'}
                             </Button>
                         </form>
@@ -133,13 +153,14 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
                                     min="0.01"
                                     value={uncookedCopraForm.data.price}
                                     onChange={(e) => uncookedCopraForm.setData('price', e.target.value)}
+                                    disabled={!isAdmin}
                                     required
                                 />
                                 {uncookedCopraForm.errors.price && (
                                     <p className="text-sm text-red-600 mt-1">{uncookedCopraForm.errors.price}</p>
                                 )}
                             </div>
-                            <Button type="submit" disabled={uncookedCopraForm.processing}>
+                            <Button type="submit" disabled={!isAdmin || uncookedCopraForm.processing}>
                                 {uncookedCopraForm.processing ? 'Updating...' : 'Update Uncooked Copra Price'}
                             </Button>
                         </form>
@@ -158,13 +179,14 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
                                     min="0.01"
                                     value={coconutForm.data.price}
                                     onChange={(e) => coconutForm.setData('price', e.target.value)}
+                                    disabled={!isAdmin}
                                     required
                                 />
                                 {coconutForm.errors.price && (
                                     <p className="text-sm text-red-600 mt-1">{coconutForm.errors.price}</p>
                                 )}
                             </div>
-                            <Button type="submit" disabled={coconutForm.processing}>
+                            <Button type="submit" disabled={!isAdmin || coconutForm.processing}>
                                 {coconutForm.processing ? 'Updating...' : 'Update Coconut Price'}
                             </Button>
                         </form>
@@ -180,4 +202,5 @@ export default function WeighInPrices({ prices }: WeighInPricesProps) {
         </AppLayout>
     );
 }
+
 

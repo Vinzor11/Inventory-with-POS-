@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Models\WeighIn;
 use App\Models\WeighInTransaction;
 use App\Services\WeighInInventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -94,17 +94,8 @@ class WeighInsLandingController extends Controller
             'weigh_ins.*.count' => 'nullable|integer|min:1',
         ]);
 
-        // Verify PIN
-        $processedBy = null;
-        $users = \App\Models\User::all();
-        
-        foreach ($users as $user) {
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                $processedBy = $user;
-                break;
-            }
-        }
+        // Verify PIN against active users only.
+        $processedBy = User::findActiveByPin($request->pin);
 
         if (!$processedBy) {
             throw ValidationException::withMessages([
@@ -241,21 +232,10 @@ class WeighInsLandingController extends Controller
             'pin' => 'required|string',
         ]);
 
-        // Verify PIN and check if owner is admin
-        $paidBy = null;
-        $users = \App\Models\User::all();
-        
-        foreach ($users as $user) {
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                if ($user->isAdmin()) {
-                    $paidBy = $user;
-                    break;
-                }
-            }
-        }
+        // Verify PIN and check if owner is admin.
+        $paidBy = User::findActiveByPin($request->pin);
 
-        if (!$paidBy) {
+        if (!$paidBy || !$paidBy->isAdmin()) {
             throw ValidationException::withMessages([
                 'pin' => ['Invalid PIN or PIN does not belong to an administrator.'],
             ]);
@@ -294,20 +274,8 @@ class WeighInsLandingController extends Controller
             'pin' => 'required|string',
         ]);
 
-        // Verify PIN - same logic as POS checkout
-        $processedBy = null;
-        $users = \App\Models\User::all();
-        
-        foreach ($users as $user) {
-            // Access the PIN directly from attributes (bypasses hidden attribute)
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            
-            // Verify the PIN if user has one set
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                $processedBy = $user;
-                break;
-            }
-        }
+        // Verify PIN against active users only.
+        $processedBy = User::findActiveByPin($request->pin);
 
         if (!$processedBy) {
             throw ValidationException::withMessages([
@@ -340,20 +308,8 @@ class WeighInsLandingController extends Controller
             'weigh_in_ids.*' => 'required|exists:weigh_ins,id',
         ]);
 
-        // Verify PIN - same logic as POS checkout
-        $processedBy = null;
-        $users = \App\Models\User::all();
-        
-        foreach ($users as $user) {
-            // Access the PIN directly from attributes (bypasses hidden attribute)
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            
-            // Verify the PIN if user has one set
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                $processedBy = $user;
-                break;
-            }
-        }
+        // Verify PIN against active users only.
+        $processedBy = User::findActiveByPin($request->pin);
 
         if (!$processedBy) {
             throw ValidationException::withMessages([

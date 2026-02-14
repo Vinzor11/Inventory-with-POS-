@@ -22,6 +22,19 @@ class RefundItem extends Model
         'restore_inventory' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        $recheckPendingPrice = function (RefundItem $refundItem): void {
+            $variant = $refundItem->productVariant()->first();
+            if ($variant) {
+                $variant->applyPendingUnitPriceIfEligible();
+            }
+        };
+
+        static::saved($recheckPendingPrice);
+        static::deleted($recheckPendingPrice);
+    }
+
     /**
      * Relationship: RefundItem belongs to a Refund
      * Each refund item is part of a refund transaction

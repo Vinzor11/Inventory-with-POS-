@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\UsersController;
 use App\Http\Controllers\PosController;
+use App\Http\Middleware\EnsureUserIsActive;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -45,7 +47,15 @@ Route::get('welcome', function () {
     return Inertia::render('welcome');
 })->name('welcome');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::get('account-deactivated', function (Request $request) {
+    $message = trim((string) $request->query('message', ''));
+
+    return Inertia::render('auth/account-deactivated', [
+        'message' => $message !== '' ? $message : 'Your account has been deactivated. Contact an administrator.',
+    ]);
+})->name('account.deactivated');
+
+Route::middleware(['auth', 'verified', EnsureUserIsActive::class])->group(function () {
     // Phase 6: Owner/Manager Dashboard & Reports (Admin only)
     Route::get('dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
     
@@ -56,12 +66,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('deliveries', [\App\Http\Controllers\ReportsController::class, 'deliveries'])->name('deliveries');
         Route::get('inventory-movements', [\App\Http\Controllers\ReportsController::class, 'inventoryMovements'])->name('inventory-movements');
         Route::get('weigh-ins', [\App\Http\Controllers\ReportsController::class, 'weighIns'])->name('weigh-ins');
+        Route::get('production', [\App\Http\Controllers\ProductionReportController::class, 'index'])->name('production');
     });
     
     // Sales Receipt Printing (ESC/POS) - requires auth
     Route::get('receipts/sales/{sale}', [\App\Http\Controllers\ReceiptController::class, 'salesReceipt'])->name('receipts.sales');
     
-    // Agricultural Products Sales (for copra/coconut)
+    // Cooked Copra stock-out sales
     Route::get('agricultural-sales/stock-summary', [\App\Http\Controllers\AgriculturalSalesController::class, 'getStockSummary'])->name('agricultural-sales.stock-summary');
     Route::post('agricultural-sales/checkout', [\App\Http\Controllers\AgriculturalSalesController::class, 'checkout'])->name('agricultural-sales.checkout');
     
@@ -79,6 +90,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('sales/{sale}/refund', [\App\Http\Controllers\RefundController::class, 'store'])->name('sales.refund.store');
     Route::get('refunds', [\App\Http\Controllers\RefundController::class, 'index'])->name('refunds.index');
 
+    Route::patch('users/{user}/toggle-active', [UsersController::class, 'toggleActive'])->name('users.toggle-active');
     Route::resource('users', UsersController::class)->except(['create', 'edit']);
 
     // Hardware Inventory Management System (HIMS) Routes
@@ -102,10 +114,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Stock-In (Admin only)
     Route::get('inventory/stock-in', [\App\Http\Controllers\StockInController::class, 'create'])->name('inventory.stock-in.create');
     Route::post('inventory/stock-in', [\App\Http\Controllers\StockInController::class, 'store'])->name('inventory.stock-in.store');
-    
+    // Purchasing alias for receiving flow
+    Route::get('inventory/purchasing', [\App\Http\Controllers\StockInController::class, 'create'])->name('inventory.purchasing.create');
+    Route::post('inventory/purchasing', [\App\Http\Controllers\StockInController::class, 'store'])->name('inventory.purchasing.store');
+
     // Inventory Adjustment (Admin only)
     Route::get('inventory/adjustment', [\App\Http\Controllers\InventoryAdjustmentController::class, 'create'])->name('inventory.adjustment.create');
     Route::post('inventory/adjustment', [\App\Http\Controllers\InventoryAdjustmentController::class, 'store'])->name('inventory.adjustment.store');
+
+    // Production Conversion Runs (Admin only)
+    Route::get('inventory/production/coconut-to-uncooked', [\App\Http\Controllers\ProductionRunController::class, 'createCoconutToUncooked'])->name('inventory.production.coconut-to-uncooked');
+    Route::get('inventory/production/uncooked-to-cooked', [\App\Http\Controllers\ProductionRunController::class, 'createUncookedToCooked'])->name('inventory.production.uncooked-to-cooked');
+    Route::get('inventory/production/coconut-to-cooked', [\App\Http\Controllers\ProductionRunController::class, 'createCoconutToCooked'])->name('inventory.production.coconut-to-cooked');
+    Route::post('inventory/production-runs', [\App\Http\Controllers\ProductionRunController::class, 'store'])->name('inventory.production.store');
     
     // Inventory Movement History (View only)
     Route::get('inventory/movements', [\App\Http\Controllers\InventoryMovementHistoryController::class, 'index'])->name('inventory.movements.index');

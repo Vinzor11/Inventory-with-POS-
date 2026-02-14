@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\InventoryMovement;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Inventory Movement Report Query Service
@@ -14,6 +15,43 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class InventoryMovementReportQueryService
 {
+    /**
+     * Get agricultural category id if configured.
+     */
+    protected function getAgriculturalCategoryId(): ?int
+    {
+        $categoryId = DB::table('product_categories')
+            ->where('name', 'Agricultural Products')
+            ->where('is_active', true)
+            ->value('id');
+
+        return $categoryId !== null ? (int) $categoryId : null;
+    }
+
+    /**
+     * Base inventory valuation query (stock on hand x cost basis).
+     */
+    protected function inventoryValuationQuery(): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('inventory')
+            ->join('product_variants', 'inventory.product_variant_id', '=', 'product_variants.id')
+            ->join('products', 'product_variants.product_id', '=', 'products.id')
+            ->where('products.track_stock', true)
+            ->where('inventory.quantity_on_hand', '>', 0);
+    }
+
+    /**
+     * Build potential profit query.
+     */
+    protected function potentialProfitQuery(): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('inventory')
+            ->join('product_variants', 'inventory.product_variant_id', '=', 'product_variants.id')
+            ->join('products', 'product_variants.product_id', '=', 'products.id')
+            ->where('products.track_stock', true)
+            ->where('inventory.quantity_on_hand', '>', 0);
+    }
+
     /**
      * Base query for inventory movements report
      * Can be filtered by date range, type, and product variant
@@ -126,31 +164,76 @@ class InventoryMovementReportQueryService
 
     /**
      * Get inventory value (for dashboard)
-     * Calculates total value of inventory on hand using purchase_price
-     * Excludes agricultural products
+     * Calculates total value of inventory on hand using purchase_price fallback unit_price.
      */
     public function getInventoryValue(): float
     {
-        return (float) \App\Models\ProductVariant::join('inventory', 'inventory.product_variant_id', '=', 'product_variants.id')
-            ->join('products', 'product_variants.product_id', '=', 'products.id')
-            ->join('product_categories', 'products.category_id', '=', 'product_categories.id')
-            ->whereNotNull('product_variants.purchase_price')
-            ->where('product_variants.purchase_price', '>', 0)
-            ->where('product_categories.name', '!=', 'Agricultural Products')
-            ->selectRaw('SUM(inventory.quantity_on_hand * product_variants.purchase_price) as total_value')
-            ->value('total_value') ?? 0;
+        $totalValue = $this->inventoryValuationQuery()
+            ->selectRaw('COALESCE(SUM(inventory.quantity_on_hand * COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)), 0) as total_value')
+            ->value('total_value');
+
+        return (float) ($totalValue ?? 0);
+    }
+
+    /**
+     * Get inventory value split by hardware vs agricultural categories.
+     *
+     * @return array{hardware_value: float, agricultural_value: float, total_value: float}
+     */
+    public function getInventoryValueSplit(): array
+    {
+        $agriculturalCategoryId = $this->getAgriculturalCategoryId();
+        $valueExpression = 'COALESCE(SUM(inventory.quantity_on_hand * COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)), 0) as total_value';
+
+        if ($agriculturalCategoryId === null) {
+            $hardwareValue = (float) ($this->inventoryValuationQuery()
+                ->selectRaw($valueExpression)
+                ->value('total_value') ?? 0);
+
+            return [
+                'hardware_value' => $hardwareValue,
+                'agricultural_value' => 0.0,
+                'total_value' => $hardwareValue,
+            ];
+        }
+
+        $hardwareValue = (float) ($this->inventoryValuationQuery()
+            ->where('products.category_id', '!=', $agriculturalCategoryId)
+            ->selectRaw($valueExpression)
+            ->value('total_value') ?? 0);
+
+        $agriculturalValue = (float) ($this->inventoryValuationQuery()
+            ->where('products.category_id', '=', $agriculturalCategoryId)
+            ->selectRaw($valueExpression)
+            ->value('total_value') ?? 0);
+
+        return [
+            'hardware_value' => $hardwareValue,
+            'agricultural_value' => $agriculturalValue,
+            'total_value' => $hardwareValue + $agriculturalValue,
+        ];
     }
 
     /**
      * Get potential profit (for dashboard)
      * Calculates total potential profit based on purchase_price and unit_price
      */
-    public function getPotentialProfit(): float
+    public function getPotentialProfit(bool $hardwareOnly = false): float
     {
-        return (float) \App\Models\ProductVariant::join('inventory', 'inventory.product_variant_id', '=', 'product_variants.id')
-            ->whereNotNull('product_variants.purchase_price')
-            ->selectRaw('SUM(inventory.quantity_on_hand * (product_variants.unit_price - product_variants.purchase_price)) as total_profit')
-            ->value('total_profit') ?? 0;
+        $query = $this->potentialProfitQuery();
+
+        if ($hardwareOnly) {
+            $agriculturalCategoryId = $this->getAgriculturalCategoryId();
+            if ($agriculturalCategoryId !== null) {
+                $query->where('products.category_id', '!=', $agriculturalCategoryId);
+            }
+        }
+
+        $totalProfit = $query
+            ->selectRaw('COALESCE(SUM(inventory.quantity_on_hand * GREATEST(COALESCE(product_variants.unit_price, 0) - COALESCE(NULLIF(product_variants.purchase_price, 0), COALESCE(product_variants.unit_price, 0)), 0)), 0) as total_profit')
+            ->value('total_profit');
+
+        return (float) ($totalProfit ?? 0);
     }
 }
 

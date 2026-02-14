@@ -13,11 +13,20 @@ use Inertia\Response;
 
 class UsersController extends Controller
 {
+    private function authorizeAdmin(Request $request): void
+    {
+        if (!$request->user()?->isAdmin()) {
+            abort(403, 'Only administrators can manage users.');
+        }
+    }
+
     /**
      * Display a listing of users.
      */
     public function index(Request $request): Response
     {
+        $this->authorizeAdmin($request);
+
         $perPage = $request->integer('per_page', 10);
 
         $users = User::query()
@@ -44,8 +53,11 @@ class UsersController extends Controller
      */
     public function store(StoreUserRequest $request): RedirectResponse
     {
+        $this->authorizeAdmin($request);
+
         $data = $request->validated();
         $data['password'] = Hash::make($data['password']);
+        $data['is_active'] = (bool) ($data['is_active'] ?? true);
         
         if (!empty($data['pin'])) {
             $data['pin'] = Hash::make($data['pin']);
@@ -59,8 +71,10 @@ class UsersController extends Controller
     /**
      * Display the specified user.
      */
-    public function show(User $user): Response
+    public function show(Request $request, User $user): Response
     {
+        $this->authorizeAdmin($request);
+
         // Make PIN visible (it will be hashed) and append has_pin accessor
         return Inertia::render('users/show', [
             'user' => $user->makeVisible(['pin'])->append('has_pin'),
@@ -72,6 +86,8 @@ class UsersController extends Controller
      */
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
+        $this->authorizeAdmin($request);
+
         $data = $request->validated();
 
         // Only hash and update password if provided
@@ -91,16 +107,47 @@ class UsersController extends Controller
         // Remove password_confirmation from data
         unset($data['password_confirmation']);
 
+        if (array_key_exists('is_active', $data)) {
+            $data['is_active'] = (bool) $data['is_active'];
+        }
+
         $user->update($data);
 
         return redirect()->back()->with('success', 'User updated successfully.');
     }
 
     /**
+     * Toggle user active status.
+     */
+    public function toggleActive(Request $request, User $user): RedirectResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $request->validate([
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $isActive = $request->has('is_active')
+            ? $request->boolean('is_active')
+            : !(bool) $user->is_active;
+
+        $user->update([
+            'is_active' => $isActive,
+        ]);
+
+        return redirect()->back()->with(
+            'success',
+            $isActive ? 'User activated successfully.' : 'User deactivated successfully.',
+        );
+    }
+
+    /**
      * Remove the specified user.
      */
-    public function destroy(User $user): RedirectResponse
+    public function destroy(Request $request, User $user): RedirectResponse
     {
+        $this->authorizeAdmin($request);
+
         $user->delete();
 
         return redirect()->back()->with('success', 'User deleted successfully.');

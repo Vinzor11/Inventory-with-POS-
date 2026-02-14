@@ -29,7 +29,7 @@ export default function WeighInsShow({ weighIn }: WeighInsShowProps) {
             <Head title={`Weigh-In #${weighIn.id}`} />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Weigh-In Details</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Weigh-In Details</h1>
                 </div>
                 <div className="max-w-2xl">
                     <div className="rounded-lg border border-sidebar-border/70 p-6 dark:border-sidebar-border">
@@ -71,4 +71,5 @@ export default function WeighInsShow({ weighIn }: WeighInsShowProps) {
         </AppLayout>
     );
 }
+
 

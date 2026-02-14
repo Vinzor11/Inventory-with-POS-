@@ -15,7 +15,7 @@ export function RowsPerPageSelector({
 }: RowsPerPageSelectorProps) {
     return (
         <Select value={perPage} onValueChange={onPerPageChange}>
-            <SelectTrigger className="w-[80px] h-9">
+            <SelectTrigger className="h-7 w-[58px] text-xs">
                 <SelectValue />
             </SelectTrigger>
             <SelectContent>

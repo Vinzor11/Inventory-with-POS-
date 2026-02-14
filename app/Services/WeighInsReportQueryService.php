@@ -15,6 +15,39 @@ use Illuminate\Support\Facades\DB;
  */
 class WeighInsReportQueryService
 {
+    private function transactionsQuery(array $filters = [])
+    {
+        $query = DB::table('weigh_in_transactions');
+
+        if (isset($filters['date_from'])) {
+            $query->whereDate('weighed_at', '>=', $filters['date_from']);
+        }
+
+        if (isset($filters['date_to'])) {
+            $query->whereDate('weighed_at', '<=', $filters['date_to']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['weighed_by_user_id'])) {
+            $query->where('weighed_by_user_id', $filters['weighed_by_user_id']);
+        }
+
+        if (isset($filters['type'])) {
+            $type = $filters['type'];
+            $query->whereExists(function ($sub) use ($type) {
+                $sub->select(DB::raw(1))
+                    ->from('weigh_ins')
+                    ->whereColumn('weigh_ins.weigh_in_transaction_id', 'weigh_in_transactions.id')
+                    ->where('weigh_ins.type', $type);
+            });
+        }
+
+        return $query;
+    }
+
     /**
      * Base query for weigh-ins report
      * Can be filtered by date range, type, status, and weighed_by
@@ -82,7 +115,7 @@ class WeighInsReportQueryService
 
         $results = $query
             ->select('type')
-            ->selectRaw('COUNT(*) as count')
+            ->selectRaw('COUNT(DISTINCT weigh_in_transaction_id) as count')
             ->selectRaw('SUM(total_amount) as total_amount')
             ->selectRaw('SUM(CASE WHEN type IN ("cooked_copra", "uncooked_copra") THEN weight_kg ELSE 0 END) as total_weight_kg')
             ->selectRaw('SUM(CASE WHEN type = "coconut" THEN count ELSE 0 END) as total_count')
@@ -116,16 +149,7 @@ class WeighInsReportQueryService
      */
     public function getTotalAmount(array $filters = []): float
     {
-        $query = DB::table('weigh_ins');
-
-        if (isset($filters['date_from'])) {
-            $query->whereDate('weighed_at', '>=', $filters['date_from']);
-        }
-        if (isset($filters['date_to'])) {
-            $query->whereDate('weighed_at', '<=', $filters['date_to']);
-        }
-
-        return (float) $query->sum('total_amount');
+        return (float) $this->transactionsQuery($filters)->sum('total_amount');
     }
 
     /**
@@ -133,7 +157,7 @@ class WeighInsReportQueryService
      */
     public function getCount(array $filters = []): int
     {
-        return $this->baseQuery($filters)->count();
+        return (int) $this->transactionsQuery($filters)->count();
     }
 
     /**
@@ -167,16 +191,7 @@ class WeighInsReportQueryService
      */
     public function getSummaryByStatus(array $filters = []): array
     {
-        $query = DB::table('weigh_ins');
-
-        if (isset($filters['date_from'])) {
-            $query->whereDate('weighed_at', '>=', $filters['date_from']);
-        }
-        if (isset($filters['date_to'])) {
-            $query->whereDate('weighed_at', '<=', $filters['date_to']);
-        }
-
-        $results = $query
+        $results = $this->transactionsQuery($filters)
             ->select('status')
             ->selectRaw('COUNT(*) as count')
             ->selectRaw('SUM(total_amount) as total_amount')

@@ -17,6 +17,7 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { toast } from '@/lib/toast';
 import { formatNumber } from '@/lib/format-currency';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -233,7 +234,7 @@ export default function DeliveryForSale({ sale, deliveries, saleItems, users }: 
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <div>
-                            <h1 className="text-2xl font-bold">Delivery - Sale {sale.sale_number}</h1>
+                            <h1 className="hidden text-2xl font-bold md:block">Delivery - Sale {sale.sale_number}</h1>
                             <p className="text-sm text-muted-foreground">Cashier: {sale.cashier.name}</p>
                         </div>
                     </div>
@@ -266,7 +267,51 @@ export default function DeliveryForSale({ sale, deliveries, saleItems, users }: 
                                 All deliveries for this sale
                             </p>
                         </div>
-                        <div className="overflow-x-auto">
+                        <div className="space-y-3 p-4 md:hidden">
+                            {deliveries.map((delivery, index) => (
+                                <MobileRecordCard
+                                    key={delivery.id}
+                                    title={`#${deliveries.length - index}`}
+                                    subtitle={delivery.delivered_by?.name || 'Not assigned'}
+                                    value={`${delivery.items?.length || 0} item(s)`}
+                                    badges={[
+                                        {
+                                            label: delivery.status.toUpperCase(),
+                                            className:
+                                                delivery.status === 'delivered'
+                                                    ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                                                    : delivery.status === 'partial'
+                                                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+                                                      : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200',
+                                        },
+                                    ]}
+                                    footer={
+                                        <Button
+                                            type="button"
+                                            className="h-11 w-full"
+                                            onClick={() => router.visit(`/deliveries/${delivery.id}`)}
+                                        >
+                                            View Details
+                                        </Button>
+                                    }
+                                >
+                                    <MobileRecordRow
+                                        label="Delivered At"
+                                        value={
+                                            delivery.delivered_at
+                                                ? new Date(delivery.delivered_at).toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric',
+                                                })
+                                                : 'Pending'
+                                        }
+                                    />
+                                </MobileRecordCard>
+                            ))}
+                        </div>
+
+                        <div className="hidden overflow-x-auto md:block">
                             <table className="w-full">
                                 <thead className="bg-muted/50">
                                     <tr>
@@ -321,7 +366,95 @@ export default function DeliveryForSale({ sale, deliveries, saleItems, users }: 
                             Enter quantities for items to deliver. Remaining quantities are read-only.
                         </p>
                     </div>
-                    <div className="overflow-x-auto">
+                    <div className="space-y-3 p-4 md:hidden">
+                        {saleItems.map((item) => {
+                            const canceledQty = Number(item.canceled_quantity ?? 0);
+                            const itemStatus = item.item_status ?? 'ACTIVE';
+                            const isCanceled = itemStatus === 'CANCELED';
+                            const isPartiallyAdjusted = itemStatus === 'PARTIAL_ADJUSTED';
+                            const canEditQty = item.product_variant && item.remaining_quantity > 0 && canAddItems && itemStatus !== 'CANCELED';
+
+                            return (
+                                <MobileRecordCard
+                                    key={item.id}
+                                    title={item.product_variant?.product?.name || 'Product Not Found'}
+                                    subtitle={item.product_variant?.description || 'Variant Not Found'}
+                                    value={formatNumber(item.remaining_quantity)}
+                                    badges={[
+                                        isCanceled
+                                            ? { label: 'Canceled', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' }
+                                            : isPartiallyAdjusted
+                                              ? { label: 'Partial Adjusted', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200' }
+                                              : { label: 'Active', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' },
+                                    ]}
+                                >
+                                    <MobileRecordRow label="Sold" value={formatNumber(item.quantity)} />
+                                    {hasRefundedItems ? <MobileRecordRow label="Refunded" value={formatNumber(item.refunded_quantity || 0)} /> : null}
+                                    <MobileRecordRow label="Delivered" value={formatNumber(item.delivered_quantity)} />
+                                    {hasCanceledItems ? <MobileRecordRow label="Canceled" value={canceledQty.toFixed(2)} /> : null}
+                                    <MobileRecordRow
+                                        label="Remaining"
+                                        value={formatNumber(item.remaining_quantity)}
+                                        valueClassName={item.remaining_quantity > 0 ? 'text-orange-600 font-medium' : undefined}
+                                    />
+
+                                    {canEditQty ? (
+                                        <div className="pt-2">
+                                            <div className="mb-2 text-sm text-muted-foreground">Deliver Qty</div>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => updateQuantity(item.product_variant_id, -0.5)}
+                                                    disabled={(deliveryQuantities[item.product_variant_id] || 0) <= 0}
+                                                    className="h-9 w-9 p-0"
+                                                >
+                                                    <Minus className="h-4 w-4" />
+                                                </Button>
+                                                <Input
+                                                    type="number"
+                                                    step="0.50"
+                                                    min="0"
+                                                    max={item.remaining_quantity}
+                                                    value={(deliveryQuantities[item.product_variant_id] || 0).toFixed(2)}
+                                                    onChange={(e) => handleQuantityChange(item.product_variant_id, e.target.value)}
+                                                    className="w-24 text-center"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => updateQuantity(item.product_variant_id, 0.5)}
+                                                    disabled={(deliveryQuantities[item.product_variant_id] || 0) >= item.remaining_quantity}
+                                                    className="h-9 w-9 p-0"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <MobileRecordRow
+                                            label="Deliver Qty"
+                                            value={
+                                                !item.product_variant
+                                                    ? 'Product Unavailable'
+                                                    : itemStatus === 'CANCELED'
+                                                      ? 'Canceled'
+                                                      : item.remaining_quantity === 0 && canceledQty > 0
+                                                        ? 'Canceled'
+                                                        : item.remaining_quantity === 0
+                                                          ? 'Fully Delivered'
+                                                          : 'N/A'
+                                            }
+                                        />
+                                    )}
+                                </MobileRecordCard>
+                            );
+                        })}
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
                         <table className="w-full">
                             <thead className="bg-muted/50">
                                 <tr>
@@ -551,4 +684,5 @@ export default function DeliveryForSale({ sale, deliveries, saleItems, users }: 
         </AppLayout>
     );
 }
+
 

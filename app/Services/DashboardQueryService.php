@@ -72,16 +72,22 @@ class DashboardQueryService
         // Today
         $todayFilters = ['date_from' => $today->format('Y-m-d'), 'date_to' => $today->format('Y-m-d')];
         $todayGross = $this->salesReportService->getGrossSalesTotal($todayFilters);
+        $todayCost = $this->salesReportService->getSalesCostTotal($todayFilters);
+        $todayGrossProfit = $todayGross - $todayCost;
         $todayNet = $this->salesReportService->getNetSalesTotal($todayFilters);
 
         // This Week
         $weekFilters = ['date_from' => $thisWeek->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
         $weekGross = $this->salesReportService->getGrossSalesTotal($weekFilters);
+        $weekCost = $this->salesReportService->getSalesCostTotal($weekFilters);
+        $weekGrossProfit = $weekGross - $weekCost;
         $weekNet = $this->salesReportService->getNetSalesTotal($weekFilters);
 
         // This Month
         $monthFilters = ['date_from' => $thisMonth->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
         $monthGross = $this->salesReportService->getGrossSalesTotal($monthFilters);
+        $monthCost = $this->salesReportService->getSalesCostTotal($monthFilters);
+        $monthGrossProfit = $monthGross - $monthCost;
         $monthNet = $this->salesReportService->getNetSalesTotal($monthFilters);
 
         // Sales by status (all time for now, can be filtered)
@@ -90,23 +96,29 @@ class DashboardQueryService
         return [
             'today' => [
                 'gross_sales' => $todayGross,
+                'total_cost' => $todayCost,
+                'gross_profit' => $todayGrossProfit,
                 'net_sales' => $todayNet,
             ],
             'this_week' => [
                 'gross_sales' => $weekGross,
+                'total_cost' => $weekCost,
+                'gross_profit' => $weekGrossProfit,
                 'net_sales' => $weekNet,
             ],
             'this_month' => [
                 'gross_sales' => $monthGross,
+                'total_cost' => $monthCost,
+                'gross_profit' => $monthGrossProfit,
                 'net_sales' => $monthNet,
             ],
             'by_status' => [
-                'OPEN' => $salesByStatus['OPEN'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
-                'PARTIAL' => $salesByStatus['PARTIAL'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
-                'COMPLETED' => $salesByStatus['COMPLETED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
-                'PARTIALLY_REFUNDED' => $salesByStatus['PARTIALLY_REFUNDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
-                'REFUNDED' => $salesByStatus['REFUNDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
-                'VOIDED' => $salesByStatus['VOIDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'OPEN' => $salesByStatus['OPEN'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'PARTIAL' => $salesByStatus['PARTIAL'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'COMPLETED' => $salesByStatus['COMPLETED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'PARTIALLY_REFUNDED' => $salesByStatus['PARTIALLY_REFUNDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'REFUNDED' => $salesByStatus['REFUNDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
+                'VOIDED' => $salesByStatus['VOIDED'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
             ],
         ];
     }
@@ -188,11 +200,16 @@ class DashboardQueryService
      */
     protected function getInventoryKPIs(): array
     {
+        $valueSplit = $this->inventoryMovementReportService->getInventoryValueSplit();
+
         return [
             'low_stock_items' => $this->inventoryMovementReportService->getLowStockItems(5, 100), // Show up to 100 low stock variants
             'fast_moving_items' => $this->inventoryMovementReportService->getFastMovingItems(10),
-            'inventory_value' => $this->inventoryMovementReportService->getInventoryValue(),
-            'potential_profit' => $this->inventoryMovementReportService->getPotentialProfit(),
+            'inventory_value' => $valueSplit['total_value'],
+            'hardware_inventory_value' => $valueSplit['hardware_value'],
+            'agricultural_inventory_value' => $valueSplit['agricultural_value'],
+            'potential_profit' => $this->inventoryMovementReportService->getPotentialProfit(true),
+            'potential_profit_basis' => 'hardware_only',
         ];
     }
 

@@ -30,6 +30,8 @@ interface ProductVariant {
     id: number;
     description: string;
     unit_price: number;
+    current_stock?: number;
+    unit?: string;
 }
 
 interface Product {
@@ -50,7 +52,7 @@ export default function InventoryAdjustment({ products, reasons, preselectedProd
     const { data, setData, post, processing, errors, reset } = useForm({
         product_id: '',
         product_variant_id: '',
-        quantity: '',
+        actual_quantity: '',
         reason: '',
         notes: '',
     });
@@ -114,14 +116,14 @@ export default function InventoryAdjustment({ products, reasons, preselectedProd
             <Head title="Inventory Adjustment" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Inventory Adjustment</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Inventory Adjustment</h1>
                 </div>
 
                 <div className="max-w-2xl">
                     <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 mb-6 dark:border-yellow-800 dark:bg-yellow-900/20">
                         <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                            <strong>Note:</strong> Use adjustments for damage, loss, recount corrections, initial stock, or other inventory changes. 
-                            Quantity can be positive (add) or negative (subtract).
+                            <strong>Note:</strong> Use this only for physical count corrections. The system computes
+                            stock difference automatically and records the adjustment reason.
                         </p>
                     </div>
 
@@ -141,6 +143,9 @@ export default function InventoryAdjustment({ products, reasons, preselectedProd
                                         <Label>Variant</Label>
                                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                                             {selectedVariant.description}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Current stock: {selectedVariant.current_stock ?? 0} {selectedVariant.unit ?? ''}
                                         </p>
                                     </div>
                                 </div>
@@ -199,21 +204,22 @@ export default function InventoryAdjustment({ products, reasons, preselectedProd
                             
                             <div className="space-y-4">
                                 <div>
-                                    <Label htmlFor="quantity">Quantity *</Label>
+                                    <Label htmlFor="actual_quantity">Actual Count *</Label>
                                     <Input
-                                        id="quantity"
+                                        id="actual_quantity"
                                         type="number"
                                         step="0.01"
-                                        value={data.quantity || ''}
-                                        onChange={(e) => setData('quantity', e.target.value)}
-                                        placeholder="Positive to add, negative to subtract"
+                                        min="0"
+                                        value={data.actual_quantity || ''}
+                                        onChange={(e) => setData('actual_quantity', e.target.value)}
+                                        placeholder="Enter physically counted stock"
                                         required
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
-                                        Use positive numbers to add stock, negative numbers to subtract stock
+                                        System computes the difference from current stock and records adjustment movement.
                                     </p>
-                                    {errors.quantity && (
-                                        <p className="text-sm text-red-600 mt-1">{errors.quantity}</p>
+                                    {errors.actual_quantity && (
+                                        <p className="text-sm text-red-600 mt-1">{errors.actual_quantity}</p>
                                     )}
                                 </div>
 
@@ -277,3 +283,4 @@ export default function InventoryAdjustment({ products, reasons, preselectedProd
         </AppLayout>
     );
 }
+

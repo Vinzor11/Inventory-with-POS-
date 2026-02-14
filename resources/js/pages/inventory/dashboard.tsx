@@ -5,6 +5,7 @@ import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { formatCurrency, formatNumber } from '@/lib/format-currency';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -55,7 +56,7 @@ export default function InventoryDashboard({
             <Head title="Inventory Dashboard" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Inventory Dashboard</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Inventory Dashboard</h1>
                     <div className="flex gap-2">
                         <Button
                             variant="outline"
@@ -142,7 +143,43 @@ export default function InventoryDashboard({
                         </p>
                     </div>
                     {lowStockItems.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                            <div className="space-y-3 p-4 md:hidden">
+                                {lowStockItems.map((variant) => {
+                                    const stock = variant.inventory?.quantity_on_hand ?? 0;
+                                    return (
+                                        <MobileRecordCard
+                                            key={variant.id}
+                                            title={variant.product.name}
+                                            subtitle={variant.description}
+                                            value={String(stock)}
+                                            badges={[
+                                                {
+                                                    label: stock === 0 ? 'Out of Stock' : 'Low Stock',
+                                                    className:
+                                                        stock === 0
+                                                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+                                                },
+                                            ]}
+                                            footer={
+                                                <Button
+                                                    type="button"
+                                                    className="h-11 w-full"
+                                                    onClick={() => router.visit(`/inventory/${variant.id}`)}
+                                                >
+                                                    View Details
+                                                </Button>
+                                            }
+                                        >
+                                            <MobileRecordRow label="Category" value={variant.product.category.name} />
+                                            <MobileRecordRow label="Price" value={`₱${formatCurrency(variant.unit_price)}`} />
+                                        </MobileRecordCard>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="hidden overflow-x-auto md:block">
                             <table className="w-full">
                                 <thead className="border-b border-sidebar-border/70 bg-gray-50 dark:bg-gray-800">
                                     <tr>
@@ -206,7 +243,8 @@ export default function InventoryDashboard({
                                     })}
                                 </tbody>
                             </table>
-                        </div>
+                            </div>
+                        </>
                     ) : (
                         <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                             <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -218,3 +256,4 @@ export default function InventoryDashboard({
         </AppLayout>
     );
 }
+

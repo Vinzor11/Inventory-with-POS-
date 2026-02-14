@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Sale;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Sales Report Query Service
@@ -15,6 +16,131 @@ use Illuminate\Support\Facades\DB;
  */
 class SalesReportQueryService
 {
+    private ?bool $salesHasSaleDateColumn = null;
+    private ?bool $saleItemsHasCanceledQuantityColumn = null;
+    private ?bool $saleItemsHasUnitCostColumn = null;
+    private ?bool $saleItemsHasTotalCostColumn = null;
+    private ?bool $saleItemsHasProfitColumn = null;
+    private ?bool $productVariantsHasPurchasePriceColumn = null;
+
+    private function saleDateExpression(string $table = 'sales'): string
+    {
+        if ($this->salesHasSaleDateColumn === null) {
+            $this->salesHasSaleDateColumn = Schema::hasColumn('sales', 'sale_date');
+        }
+
+        if ($this->salesHasSaleDateColumn) {
+            return "COALESCE({$table}.sale_date, DATE({$table}.created_at))";
+        }
+
+        return "DATE({$table}.created_at)";
+    }
+
+    private function saleItemsHasCanceledQuantityColumn(): bool
+    {
+        if ($this->saleItemsHasCanceledQuantityColumn === null) {
+            $this->saleItemsHasCanceledQuantityColumn = Schema::hasColumn('sale_items', 'canceled_quantity');
+        }
+
+        return $this->saleItemsHasCanceledQuantityColumn;
+    }
+
+    private function saleItemsHasUnitCostColumn(): bool
+    {
+        if ($this->saleItemsHasUnitCostColumn === null) {
+            $this->saleItemsHasUnitCostColumn = Schema::hasColumn('sale_items', 'unit_cost');
+        }
+
+        return $this->saleItemsHasUnitCostColumn;
+    }
+
+    private function saleItemsHasTotalCostColumn(): bool
+    {
+        if ($this->saleItemsHasTotalCostColumn === null) {
+            $this->saleItemsHasTotalCostColumn = Schema::hasColumn('sale_items', 'total_cost');
+        }
+
+        return $this->saleItemsHasTotalCostColumn;
+    }
+
+    private function saleItemsHasProfitColumn(): bool
+    {
+        if ($this->saleItemsHasProfitColumn === null) {
+            $this->saleItemsHasProfitColumn = Schema::hasColumn('sale_items', 'profit');
+        }
+
+        return $this->saleItemsHasProfitColumn;
+    }
+
+    private function productVariantsHasPurchasePriceColumn(): bool
+    {
+        if ($this->productVariantsHasPurchasePriceColumn === null) {
+            $this->productVariantsHasPurchasePriceColumn = Schema::hasColumn('product_variants', 'purchase_price');
+        }
+
+        return $this->productVariantsHasPurchasePriceColumn;
+    }
+
+    private function remainingQuantityExpression(): string
+    {
+        if ($this->saleItemsHasCanceledQuantityColumn()) {
+            return 'GREATEST(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0), 0)';
+        }
+
+        return 'sale_items.quantity';
+    }
+
+    private function variantFallbackUnitCostExpression(): string
+    {
+        if ($this->productVariantsHasPurchasePriceColumn()) {
+            return 'COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)';
+        }
+
+        return 'COALESCE(product_variants.unit_price, 0)';
+    }
+
+    private function saleItemTotalCostExpression(): string
+    {
+        $remainingQty = $this->remainingQuantityExpression();
+        $fallbackUnitCost = $this->variantFallbackUnitCostExpression();
+        $snapshotUnitCostExpr = "(($remainingQty) * COALESCE(sale_items.unit_cost, $fallbackUnitCost))";
+
+        if (!$this->saleItemsHasTotalCostColumn()) {
+            if ($this->saleItemsHasUnitCostColumn()) {
+                return $snapshotUnitCostExpr;
+            }
+
+            return "(($remainingQty) * $fallbackUnitCost)";
+        }
+
+        $ratioExpr = 'CASE WHEN sale_items.quantity > 0 THEN ' . $remainingQty . ' / sale_items.quantity ELSE 0 END';
+        $snapshotTotalCostExpr = "(sale_items.total_cost * ($ratioExpr))";
+
+        if ($this->saleItemsHasUnitCostColumn()) {
+            return "COALESCE($snapshotTotalCostExpr, $snapshotUnitCostExpr)";
+        }
+
+        return "COALESCE($snapshotTotalCostExpr, (($remainingQty) * $fallbackUnitCost))";
+    }
+
+    private function applySalesFiltersToQuery($query, array $filters = [], string $table = 'sales'): void
+    {
+        $saleDateExpression = $this->saleDateExpression($table);
+
+        if (isset($filters['date_from'])) {
+            $query->whereRaw("{$saleDateExpression} >= ?", [$filters['date_from']]);
+        }
+        if (isset($filters['date_to'])) {
+            $query->whereRaw("{$saleDateExpression} <= ?", [$filters['date_to']]);
+        }
+        if (isset($filters['cashier_id'])) {
+            $query->where("{$table}.cashier_user_id", $filters['cashier_id']);
+        }
+        if (isset($filters['status'])) {
+            $query->where("{$table}.status", $filters['status']);
+        }
+    }
+
     /**
      * Base query for sales report
      * Can be filtered by date range, cashier, and sale_status
@@ -22,14 +148,15 @@ class SalesReportQueryService
     public function baseQuery(array $filters = []): Builder
     {
         $query = Sale::query();
+        $saleDateExpression = $this->saleDateExpression('sales');
 
         // Filter by date range - qualify with table name to avoid ambiguity
         if (isset($filters['date_from'])) {
-            $query->whereDate('created_at', '>=', $filters['date_from']);
+            $query->whereRaw("{$saleDateExpression} >= ?", [$filters['date_from']]);
         }
 
         if (isset($filters['date_to'])) {
-            $query->whereDate('created_at', '<=', $filters['date_to']);
+            $query->whereRaw("{$saleDateExpression} <= ?", [$filters['date_to']]);
         }
 
         // Filter by cashier
@@ -51,10 +178,35 @@ class SalesReportQueryService
      */
     public function getPaginated(array $filters = [], int $perPage = 15)
     {
+        $saleItemColumns = [
+            'id',
+            'sale_id',
+            'product_variant_id',
+            'quantity',
+            'unit_price',
+            'line_total',
+        ];
+
+        if ($this->saleItemsHasCanceledQuantityColumn()) {
+            $saleItemColumns[] = 'canceled_quantity';
+        }
+        if ($this->saleItemsHasUnitCostColumn()) {
+            $saleItemColumns[] = 'unit_cost';
+        }
+        if ($this->saleItemsHasTotalCostColumn()) {
+            $saleItemColumns[] = 'total_cost';
+        }
+        if ($this->saleItemsHasProfitColumn()) {
+            $saleItemColumns[] = 'profit';
+        }
+
+        $saleItemsSelect = implode(',', $saleItemColumns);
+
         return $this->baseQuery($filters)
             ->select('sales.*')
             ->with([
                 'cashier:id,name,email',
+                "items:$saleItemsSelect",
                 'payments:id,sale_id,amount',
                 'refunds:id,sale_id,refund_amount'
             ])
@@ -71,19 +223,7 @@ class SalesReportQueryService
     {
         // Get sales aggregated by status
         $salesQuery = DB::table('sales');
-
-        if (isset($filters['date_from'])) {
-            $salesQuery->whereDate('created_at', '>=', $filters['date_from']);
-        }
-        if (isset($filters['date_to'])) {
-            $salesQuery->whereDate('created_at', '<=', $filters['date_to']);
-        }
-        if (isset($filters['cashier_id'])) {
-            $salesQuery->where('cashier_user_id', $filters['cashier_id']);
-        }
-        if (isset($filters['status'])) {
-            $salesQuery->where('status', $filters['status']);
-        }
+        $this->applySalesFiltersToQuery($salesQuery, $filters, 'sales');
 
         $salesByStatus = $salesQuery
             ->select('status')
@@ -99,29 +239,31 @@ class SalesReportQueryService
             ->select('sales.status')
             ->selectRaw('SUM(refunds.refund_amount) as total_refunded')
             ->groupBy('sales.status');
-
-        if (isset($filters['date_from'])) {
-            $refundsQuery->whereDate('sales.created_at', '>=', $filters['date_from']);
-        }
-        if (isset($filters['date_to'])) {
-            $refundsQuery->whereDate('sales.created_at', '<=', $filters['date_to']);
-        }
-        if (isset($filters['cashier_id'])) {
-            $refundsQuery->where('sales.cashier_user_id', $filters['cashier_id']);
-        }
-        if (isset($filters['status'])) {
-            $refundsQuery->where('sales.status', $filters['status']);
-        }
+        $this->applySalesFiltersToQuery($refundsQuery, $filters, 'sales');
 
         $refundsByStatus = $refundsQuery->get()->keyBy('status');
+
+        $totalCostExpression = $this->saleItemTotalCostExpression();
+        $costByStatusQuery = DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('product_variants', 'sale_items.product_variant_id', '=', 'product_variants.id')
+            ->select('sales.status')
+            ->selectRaw("SUM($totalCostExpression) as total_cost")
+            ->groupBy('sales.status');
+        $this->applySalesFiltersToQuery($costByStatusQuery, $filters, 'sales');
+
+        $costByStatus = $costByStatusQuery->get()->keyBy('status');
 
         // Combine results
         $summary = [];
         foreach ($salesByStatus as $status => $data) {
             $totalRefunded = (float) ($refundsByStatus[$status]->total_refunded ?? 0);
+            $totalCost = (float) ($costByStatus[$status]->total_cost ?? 0);
             $summary[$status] = [
                 'count' => (int) $data->count,
                 'gross_sales' => (float) $data->gross_sales,
+                'total_cost' => $totalCost,
+                'gross_profit' => (float) $data->gross_sales - $totalCost,
                 'total_refunded' => $totalRefunded,
                 'net_sales' => (float) $data->gross_sales - $totalRefunded,
             ];
@@ -135,8 +277,13 @@ class SalesReportQueryService
      */
     public function getGrossSalesTotal(array $filters = []): float
     {
-        return (float) $this->baseQuery($filters)
-            ->sum('total');
+        $query = $this->baseQuery($filters);
+
+        if (!isset($filters['status'])) {
+            $query->where('status', '!=', 'VOIDED');
+        }
+
+        return (float) $query->sum('total');
     }
 
     /**
@@ -145,27 +292,56 @@ class SalesReportQueryService
      */
     public function getNetSalesTotal(array $filters = []): float
     {
-        $query = DB::table('sales')
-            ->selectRaw('COALESCE(SUM(sales.total), 0) - COALESCE(SUM(refunds.refund_amount), 0) as net_total')
-            ->leftJoin('refunds', 'refunds.sale_id', '=', 'sales.id');
+        $grossQuery = DB::table('sales');
+        $this->applySalesFiltersToQuery($grossQuery, $filters, 'sales');
+        if (!isset($filters['status'])) {
+            $grossQuery->where('sales.status', '!=', 'VOIDED');
+        }
+        $grossTotal = (float) $grossQuery->sum('sales.total');
 
-        // Apply filters
-        if (isset($filters['date_from'])) {
-            $query->whereDate('sales.created_at', '>=', $filters['date_from']);
+        $refundsQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id');
+        $this->applySalesFiltersToQuery($refundsQuery, $filters, 'sales');
+        if (!isset($filters['status'])) {
+            $refundsQuery->where('sales.status', '!=', 'VOIDED');
         }
-        if (isset($filters['date_to'])) {
-            $query->whereDate('sales.created_at', '<=', $filters['date_to']);
-        }
-        if (isset($filters['cashier_id'])) {
-            $query->where('sales.cashier_user_id', $filters['cashier_id']);
-        }
-        if (isset($filters['status'])) {
-            $query->where('sales.status', $filters['status']);
+        $totalRefunded = (float) $refundsQuery->sum('refunds.refund_amount');
+
+        return max(0, $grossTotal - $totalRefunded);
+    }
+
+    /**
+     * Get total item cost using average cost basis per variant
+     * (purchase_price as weighted-average cache, with unit_price fallback).
+     */
+    public function getSalesCostTotal(array $filters = []): float
+    {
+        $costQuery = DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('product_variants', 'sale_items.product_variant_id', '=', 'product_variants.id');
+
+        $this->applySalesFiltersToQuery($costQuery, $filters, 'sales');
+
+        if (!isset($filters['status'])) {
+            $costQuery->where('sales.status', '!=', 'VOIDED');
         }
 
-        $result = $query->value('net_total');
+        $totalCostExpression = $this->saleItemTotalCostExpression();
 
-        return max(0, (float) $result);
+        return (float) $costQuery
+            ->selectRaw("COALESCE(SUM($totalCostExpression), 0) as total_cost")
+            ->value('total_cost');
+    }
+
+    /**
+     * Gross profit = gross revenue - total item cost.
+     */
+    public function getGrossProfitTotal(array $filters = []): float
+    {
+        $gross = $this->getGrossSalesTotal($filters);
+        $cost = $this->getSalesCostTotal($filters);
+
+        return $gross - $cost;
     }
 
     /**

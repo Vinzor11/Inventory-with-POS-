@@ -12,6 +12,7 @@ interface PaginationProps {
     onPageChange?: (page: number) => void
     preserveFilters?: boolean
     filters?: Record<string, any>
+    pageSizeSelector?: React.ReactNode
 }
 
 function Pagination({
@@ -22,6 +23,7 @@ function Pagination({
     onPageChange,
     preserveFilters = true,
     filters = {},
+    pageSizeSelector,
 }: PaginationProps) {
     // Ensure all values are valid numbers, defaulting to safe defaults if NaN
     const safeCurrentPage = Number(currentPage) || 1
@@ -91,38 +93,29 @@ function Pagination({
 
     const startItem = Math.max(1, (safeCurrentPage - 1) * safePerPage + 1)
     const endItem = Math.min(safeCurrentPage * safePerPage, safeTotal)
+    const summaryText = `${String(startItem)}-${String(endItem)} of ${String(safeTotal)}`
 
     // Show rows per page selector even if only 1 page (user might want to change it)
     const showPaginationControls = safeLastPage > 1
 
     return (
-        <div className="flex flex-col gap-4 px-4 py-3 border-t border-sidebar-border/70 dark:border-sidebar-border">
-            {/* Only show pagination controls if more than 1 page */}
-            {!showPaginationControls && (
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Showing <span className="font-medium">{String(startItem)}</span> to{" "}
-                    <span className="font-medium">{String(endItem)}</span> of{" "}
-                    <span className="font-medium">{String(safeTotal)}</span> results
+        <div className="border-t border-sidebar-border/70 bg-card px-3 py-1.5 dark:border-sidebar-border">
+            <div className="flex items-center gap-2.5">
+                <div className="min-w-0 shrink text-[11px] leading-tight text-gray-600 dark:text-gray-400 sm:text-xs">
+                    {summaryText}
                 </div>
-            )}
 
-            {showPaginationControls && (
-                <>
-                    {/* Pagination info and controls */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                            Showing <span className="font-medium">{String(startItem)}</span> to{" "}
-                            <span className="font-medium">{String(endItem)}</span> of{" "}
-                            <span className="font-medium">{String(safeTotal)}</span> results
-                        </div>
+                <div className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto">
+                    {pageSizeSelector && <div className="shrink-0">{pageSizeSelector}</div>}
 
-                        <div className="flex items-center gap-2">
+                    {showPaginationControls && (
+                        <>
                             <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handlePageChange(safeCurrentPage - 1)}
                                 disabled={safeCurrentPage === 1}
-                                className="h-8 w-8 p-0"
+                                className="h-7 w-7 shrink-0 p-0"
                             >
                                 <ChevronLeft className="h-4 w-4" />
                                 <span className="sr-only">Previous page</span>
@@ -136,7 +129,7 @@ function Pagination({
                                                 key={`ellipsis-${index}`}
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-8 w-8 p-0"
+                                                className="h-7 w-7 shrink-0 p-0"
                                                 disabled
                                             >
                                                 <MoreHorizontal className="h-4 w-4" />
@@ -155,7 +148,7 @@ function Pagination({
                                             size="sm"
                                             onClick={() => handlePageChange(pageNum)}
                                             className={cn(
-                                                "h-8 w-8 p-0",
+                                                "h-7 w-7 shrink-0 p-0 text-xs",
                                                 isActive && "bg-primary text-primary-foreground"
                                             )}
                                         >
@@ -170,15 +163,15 @@ function Pagination({
                                 size="sm"
                                 onClick={() => handlePageChange(safeCurrentPage + 1)}
                                 disabled={safeCurrentPage === safeLastPage}
-                                className="h-8 w-8 p-0"
+                                className="h-7 w-7 shrink-0 p-0"
                             >
                                 <ChevronRight className="h-4 w-4" />
                                 <span className="sr-only">Next page</span>
                             </Button>
-                        </div>
-                    </div>
-                </>
-            )}
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     )
 }

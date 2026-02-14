@@ -1,15 +1,21 @@
-import { Head } from '@inertiajs/react';
-import { useState, useEffect, useCallback } from 'react';
+﻿import {
+    MobileRecordCard,
+    MobileRecordRow,
+} from '@/components/mobile/record-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Pagination } from '@/components/ui/pagination';
-import { RowsPerPageSelector, PER_PAGE_OPTIONS } from '@/components/ui/rows-per-page-selector';
-import { Search, RefreshCw, Eye } from 'lucide-react';
+import {
+    PER_PAGE_OPTIONS,
+    RowsPerPageSelector,
+} from '@/components/ui/rows-per-page-selector';
 import { useDebounce } from '@/hooks/use-debounce';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { router } from '@inertiajs/react';
 import { formatCurrency } from '@/lib/format-currency';
+import { type BreadcrumbItem } from '@/types';
+import { Head, router } from '@inertiajs/react';
+import { Eye, RefreshCw, Search } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -90,18 +96,28 @@ export default function RefundsIndex({ refunds, filters }: RefundsIndexProps) {
         return String(filters?.per_page ?? 15);
     });
 
-    const triggerFetch = useCallback((params: any = {}) => {
-        router.get('/refunds', {
-            page: params.page || refunds?.current_page || 1,
-            per_page: params.per_page || parseInt(perPage, 10),
-            search: params.search !== undefined ? params.search : debouncedSearch,
-            ...params,
-        }, {
-            preserveState: true,
-            preserveScroll: false,
-            replace: true,
-        });
-    }, [debouncedSearch, perPage, refunds?.current_page]);
+    const triggerFetch = useCallback(
+        (params: any = {}) => {
+            router.get(
+                '/refunds',
+                {
+                    page: params.page || refunds?.current_page || 1,
+                    per_page: params.per_page || parseInt(perPage, 10),
+                    search:
+                        params.search !== undefined
+                            ? params.search
+                            : debouncedSearch,
+                    ...params,
+                },
+                {
+                    preserveState: true,
+                    preserveScroll: false,
+                    replace: true,
+                },
+            );
+        },
+        [debouncedSearch, perPage, refunds?.current_page],
+    );
 
     useEffect(() => {
         triggerFetch({ search: debouncedSearch, page: 1 });
@@ -120,89 +136,212 @@ export default function RefundsIndex({ refunds, filters }: RefundsIndexProps) {
         triggerFetch({ page });
     };
 
+    const mobileHeaderControls = (
+        <div className="relative min-w-0 flex-1">
+            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+                type="text"
+                placeholder="Search by sale number..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="app-search-surface h-10 w-full pl-10 text-sm"
+            />
+        </div>
+    );
+
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppLayout
+            breadcrumbs={breadcrumbs}
+            mobileHeaderContent={mobileHeaderControls}
+        >
             <Head title="Refund History" />
-            <div className="flex flex-col overflow-hidden bg-background" style={{ height: 'calc(100vh - 80px)' }}>
-                <div className="flex-shrink-0 bg-card border-b border-border shadow-sm z-40 p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h1 className="text-2xl font-bold">Refund History</h1>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+                <div className="z-40 hidden flex-shrink-0 border-b border-border bg-card px-3 py-2.5 shadow-sm md:block md:space-y-4 md:p-4">
+                    <div className="hidden items-center justify-between md:flex">
+                        <h1 className="hidden text-2xl font-bold md:block">
+                            Refund History
+                        </h1>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <div className="hidden items-center gap-2 md:flex">
+                        <div className="relative min-w-0 flex-1 md:flex-none">
+                            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform text-gray-400" />
                             <Input
                                 type="text"
                                 placeholder="Search by sale number..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                className="pl-10 w-[250px]"
+                                className="h-9 w-full pl-10 md:h-10 md:w-[250px]"
                             />
                         </div>
-                        <RowsPerPageSelector
-                            perPage={perPage}
-                            onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
-                            storageKey={STORAGE_KEY}
-                        />
                     </div>
                 </div>
 
-                <div className="flex-1 min-h-0 bg-background overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-y-auto bg-background">
                     <div className="p-4">
-                        <div className="rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
+                        <div className="space-y-3 md:hidden">
+                            {refunds.data.length > 0 ? (
+                                refunds.data.map((refund) => (
+                                    <MobileRecordCard
+                                        key={refund.id}
+                                        title={`#${refund.id}`}
+                                        subtitle={refund.sale.sale_number}
+                                        value={
+                                            <span className="text-red-600">
+                                                â‚±
+                                                {formatCurrency(
+                                                    refund.refund_amount,
+                                                )}
+                                            </span>
+                                        }
+                                        badges={[
+                                            {
+                                                label:
+                                                    refund.type === 'full'
+                                                        ? 'Full'
+                                                        : 'Partial',
+                                                className:
+                                                    refund.type === 'full'
+                                                        ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                                        : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+                                            },
+                                        ]}
+                                        footer={
+                                            <Button
+                                                type="button"
+                                                className="h-11 w-full"
+                                                onClick={() =>
+                                                    router.visit(
+                                                        `/sales/${refund.sale.id}`,
+                                                    )
+                                                }
+                                            >
+                                                View Sale
+                                            </Button>
+                                        }
+                                    >
+                                        <MobileRecordRow
+                                            label="Items"
+                                            value={`${refund.items.length} item(s)`}
+                                        />
+                                        <MobileRecordRow
+                                            label="Processed By"
+                                            value={refund.processed_by.name}
+                                        />
+                                        <MobileRecordRow
+                                            label="Date"
+                                            value={new Date(
+                                                refund.created_at,
+                                            ).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric',
+                                            })}
+                                        />
+                                    </MobileRecordCard>
+                                ))
+                            ) : (
+                                <div className="rounded-xl border border-sidebar-border/70 bg-card px-4 py-12 text-center text-gray-500 dark:border-sidebar-border dark:text-gray-400">
+                                    <RefreshCw className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                                    <p>No refunds found</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="hidden rounded-xl border border-sidebar-border/70 md:block dark:border-sidebar-border">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="border-b border-sidebar-border/70 bg-gray-50 dark:bg-gray-800">
                                         <tr>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Refund ID</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Sale Number</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Refund Amount</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Type</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Items</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Processed By</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Date</th>
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">Actions</th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Refund ID
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Sale Number
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Refund Amount
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Type
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Items
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Processed By
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Date
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
+                                                Actions
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-sidebar-border/70">
                                         {refunds.data.length > 0 ? (
                                             refunds.data.map((refund) => (
-                                                <tr key={refund.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                <tr
+                                                    key={refund.id}
+                                                    className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                >
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                                         #{refund.id}
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                                                        {refund.sale.sale_number}
+                                                        {
+                                                            refund.sale
+                                                                .sale_number
+                                                        }
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                                         <span className="font-semibold text-red-600">
-                                                            ₱{formatCurrency(refund.refund_amount)}
+                                                            â‚±
+                                                            {formatCurrency(
+                                                                refund.refund_amount,
+                                                            )}
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm">
-                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                            refund.type === 'full'
-                                                                ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                                                : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
-                                                        }`}>
-                                                            {refund.type === 'full' ? 'Full' : 'Partial'}
+                                                        <span
+                                                            className={`rounded-full px-2 py-1 text-xs font-medium ${
+                                                                refund.type ===
+                                                                'full'
+                                                                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                                                    : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
+                                                            }`}
+                                                        >
+                                                            {refund.type ===
+                                                            'full'
+                                                                ? 'Full'
+                                                                : 'Partial'}
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                                                        {refund.items.length} item(s)
+                                                        {refund.items.length}{' '}
+                                                        item(s)
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                                                        {refund.processed_by.name}
+                                                        {
+                                                            refund.processed_by
+                                                                .name
+                                                        }
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                                                        {new Date(refund.created_at).toLocaleString()}
+                                                        {new Date(
+                                                            refund.created_at,
+                                                        ).toLocaleString()}
                                                     </td>
                                                     <td className="px-4 py-3 text-sm">
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            onClick={() => router.visit(`/sales/${refund.sale.id}`)}
+                                                            onClick={() =>
+                                                                router.visit(
+                                                                    `/sales/${refund.sale.id}`,
+                                                                )
+                                                            }
                                                             title="View sale"
                                                         >
                                                             <Eye className="h-4 w-4" />
@@ -212,8 +351,11 @@ export default function RefundsIndex({ refunds, filters }: RefundsIndexProps) {
                                             ))
                                         ) : (
                                             <tr>
-                                                <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
-                                                    <RefreshCw className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                                <td
+                                                    colSpan={8}
+                                                    className="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
+                                                >
+                                                    <RefreshCw className="mx-auto mb-4 h-12 w-12 opacity-50" />
                                                     <p>No refunds found</p>
                                                 </td>
                                             </tr>
@@ -226,13 +368,34 @@ export default function RefundsIndex({ refunds, filters }: RefundsIndexProps) {
                         {refunds.total > 0 && (
                             <div className="mt-4 flex items-center justify-between">
                                 <div className="text-sm text-gray-600 dark:text-gray-400">
-                                    Showing {((refunds.current_page - 1) * refunds.per_page) + 1} to{' '}
-                                    {Math.min(refunds.current_page * refunds.per_page, refunds.total)} of {refunds.total} refunds
+                                    Showing{' '}
+                                    {(refunds.current_page - 1) *
+                                        refunds.per_page +
+                                        1}{' '}
+                                    to{' '}
+                                    {Math.min(
+                                        refunds.current_page * refunds.per_page,
+                                        refunds.total,
+                                    )}{' '}
+                                    of {refunds.total} refunds
                                 </div>
                                 <Pagination
                                     currentPage={refunds.current_page}
-                                    totalPages={refunds.last_page}
+                                    lastPage={refunds.last_page}
+                                    total={refunds.total}
+                                    perPage={refunds.per_page}
                                     onPageChange={handlePageChange}
+                                    pageSizeSelector={
+                                        <RowsPerPageSelector
+                                            perPage={perPage}
+                                            onPerPageChange={(value) =>
+                                                handlePerPageChange(
+                                                    parseInt(value, 10),
+                                                )
+                                            }
+                                            storageKey={STORAGE_KEY}
+                                        />
+                                    }
                                 />
                             </div>
                         )}
@@ -242,4 +405,3 @@ export default function RefundsIndex({ refunds, filters }: RefundsIndexProps) {
         </AppLayout>
     );
 }
-

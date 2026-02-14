@@ -8,6 +8,8 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { formatCurrency } from '@/lib/format-currency';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { FilterSheetButton } from '@/components/mobile/filter-sheet-button';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -129,20 +131,42 @@ export default function RefundsAdjustmentsReport({ refunds, adjustments, filters
     };
 
     const currentData = activeTab === 'refunds' ? refunds : adjustments;
+    const hasActiveFilters = Boolean(dateFrom) || Boolean(dateTo);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Refunds & Adjustments Report" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Refunds & Adjustments Report</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Refunds & Adjustments Report</h1>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Complete audit trail of refunds and sale adjustments
                     </p>
                 </div>
 
                 {/* Filters */}
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex justify-end md:hidden">
+                    <FilterSheetButton title="Report Filters" isActive={hasActiveFilters}>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date From</label>
+                            <Input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date To</label>
+                            <Input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                            />
+                        </div>
+                    </FilterSheetButton>
+                </div>
+
+                <div className="hidden gap-4 md:grid md:grid-cols-2">
                     <div>
                         <label className="text-sm font-medium mb-1 block">Date From</label>
                         <Input
@@ -197,7 +221,62 @@ export default function RefundsAdjustmentsReport({ refunds, adjustments, filters
                 )}
 
                 {/* Table */}
-                <div className="rounded-lg border">
+                <div className="space-y-3 md:hidden">
+                    {activeTab === 'refunds'
+                        ? refunds.data.map((refund) => (
+                            <MobileRecordCard
+                                key={refund.id}
+                                title={refund.sale.sale_number}
+                                subtitle={refund.processed_by.name}
+                                value={formatCurrency(refund.refund_amount)}
+                                badges={[
+                                    {
+                                        label: refund.type === 'full' ? 'Full' : 'Partial',
+                                        className:
+                                            refund.type === 'full'
+                                                ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
+                                                : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200',
+                                    },
+                                ]}
+                            >
+                                <MobileRecordRow
+                                    label="Date"
+                                    value={new Date(refund.created_at).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                    })}
+                                />
+                                <MobileRecordRow label="Reason" value={refund.reason || '-'} />
+                            </MobileRecordCard>
+                        ))
+                        : adjustments.data.map((adjustment) => (
+                            <MobileRecordCard
+                                key={adjustment.id}
+                                title={adjustment.sale.sale_number}
+                                subtitle={adjustment.processed_by.name}
+                                value={formatCurrency(adjustment.amount_removed)}
+                                badges={[{ label: 'Adjustment', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' }]}
+                            >
+                                <MobileRecordRow
+                                    label="Date"
+                                    value={new Date(adjustment.created_at).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                    })}
+                                />
+                                <MobileRecordRow
+                                    label="Item"
+                                    value={`${adjustment.sale_item.product_variant.product.name} - ${adjustment.sale_item.product_variant.description}`}
+                                />
+                                <MobileRecordRow label="Qty Canceled" value={String(adjustment.canceled_quantity)} />
+                                <MobileRecordRow label="Reason" value={adjustment.reason || '-'} />
+                            </MobileRecordCard>
+                        ))}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
@@ -275,20 +354,40 @@ export default function RefundsAdjustmentsReport({ refunds, adjustments, filters
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between">
-                    <RowsPerPageSelector
-                        value={parseInt(perPage, 10)}
-                        onChange={handlePerPageChange}
-                        options={PER_PAGE_OPTIONS}
-                    />
+                <div className="hidden md:block">
                     <Pagination
                         currentPage={currentData.current_page}
-                        totalPages={currentData.last_page}
+                        lastPage={currentData.last_page}
+                        total={currentData.total}
+                        perPage={currentData.per_page}
                         onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
+                    />
+                </div>
+
+                <div className="md:hidden">
+                    <Pagination
+                        currentPage={currentData.current_page}
+                        lastPage={currentData.last_page}
+                        total={currentData.total}
+                        perPage={currentData.per_page}
+                        onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
                     />
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

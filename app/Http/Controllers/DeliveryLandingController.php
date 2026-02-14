@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Sale;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,8 +25,8 @@ class DeliveryLandingController extends Controller
             ->whereIn('delivery_status', ['PENDING', 'PARTIAL'])
             ->with([
                 'cashier:id,name',
-                'items.productVariant.product:id,name',
-                'deliveries.items.productVariant.product:id,name'
+                'items.productVariant.product:id,name,image',
+                'deliveries.items.productVariant.product:id,name,image'
             ])
             ->orderBy('created_at', 'desc')
             ->get()
@@ -74,6 +74,7 @@ class DeliveryLandingController extends Controller
                             'product' => $saleItem->productVariant->product ? [
                                 'id' => $saleItem->productVariant->product->id,
                                 'name' => $saleItem->productVariant->product->name,
+                                'image' => $saleItem->productVariant->product->image,
                             ] : null,
                         ] : null,
                     ];
@@ -118,20 +119,8 @@ class DeliveryLandingController extends Controller
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        // Verify PIN - same logic as POS checkout
-        $deliveredBy = null;
-        $users = \App\Models\User::all();
-        
-        foreach ($users as $user) {
-            // Access the PIN directly from attributes (bypasses hidden attribute)
-            $pinHash = $user->getAttributes()['pin'] ?? null;
-            
-            // Verify the PIN if user has one set
-            if ($pinHash && Hash::check($request->pin, $pinHash)) {
-                $deliveredBy = $user;
-                break;
-            }
-        }
+        // Verify PIN against active users only.
+        $deliveredBy = User::findActiveByPin($request->pin);
 
         if (!$deliveredBy) {
             throw ValidationException::withMessages([

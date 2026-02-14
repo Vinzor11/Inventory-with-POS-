@@ -12,7 +12,7 @@ class InventoryAdjustmentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()?->hasRole('admin') ?? false;
+        return $this->user()?->can('can_adjust_stock') ?? false;
     }
 
     /**
@@ -28,8 +28,9 @@ class InventoryAdjustmentRequest extends FormRequest
     {
         return [
             'product_variant_id' => 'required|exists:product_variants,id',
-            'quantity' => 'required|numeric',
-            'reason' => 'required|string|max:255',
+            'actual_quantity' => 'required_without:quantity|nullable|numeric|min:0',
+            'quantity' => 'required_without:actual_quantity|nullable|numeric',
+            'reason' => 'required|string|in:physical_count,damage,spoilage,correction',
             'notes' => 'required|string|max:1000',
         ];
     }
@@ -43,7 +44,9 @@ class InventoryAdjustmentRequest extends FormRequest
             'product_variant_id.required' => 'Please select a product variant.',
             'product_variant_id.exists' => 'The selected product variant does not exist.',
             'quantity.required' => 'Quantity is required.',
+            'actual_quantity.required_without' => 'Actual quantity is required.',
             'reason.required' => 'Reason is required for inventory adjustments.',
+            'reason.in' => 'Reason must be one of: Physical Count, Damage, Spoilage, Correction.',
             'notes.required' => 'Notes are required for audit trail.',
         ];
     }

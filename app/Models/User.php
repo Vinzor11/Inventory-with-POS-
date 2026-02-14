@@ -4,14 +4,17 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -24,6 +27,7 @@ class User extends Authenticatable
         'password',
         'pin',
         'role',
+        'is_active',
     ];
 
     /**
@@ -50,6 +54,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'pin' => 'hashed',
+            'is_active' => 'boolean',
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
@@ -88,5 +93,42 @@ class User extends Authenticatable
     public function isStaff(): bool
     {
         return $this->hasRole('staff');
+    }
+
+    /**
+     * Scope active users.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
+    /**
+     * Check if user is active.
+     */
+    public function isActive(): bool
+    {
+        return (bool) $this->is_active;
+    }
+
+    /**
+     * Resolve an active user by PIN.
+     */
+    public static function findActiveByPin(string $pin): ?self
+    {
+        $normalizedPin = trim($pin);
+        if ($normalizedPin === '') {
+            return null;
+        }
+
+        return self::query()
+            ->active()
+            ->whereNotNull('pin')
+            ->get()
+            ->first(function (self $user) use ($normalizedPin): bool {
+                $pinHash = $user->getRawOriginal('pin');
+
+                return !empty($pinHash) && Hash::check($normalizedPin, $pinHash);
+            });
     }
 }

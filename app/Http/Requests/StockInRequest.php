@@ -12,7 +12,7 @@ class StockInRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()?->hasRole('admin') ?? false;
+        return $this->user()?->can('can_receive_stock') ?? false;
     }
 
     /**
@@ -28,8 +28,9 @@ class StockInRequest extends FormRequest
     {
         return [
             'product_variant_id' => 'required|exists:product_variants,id',
-            'quantity' => 'required|numeric|min:0.01',
-            'unit_cost' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0.0001',
+            'unit_cost' => 'required|numeric|min:0.0001',
+            'received_at' => 'nullable|date',
             'notes' => 'nullable|string|max:1000',
         ];
     }

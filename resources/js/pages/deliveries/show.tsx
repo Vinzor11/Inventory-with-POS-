@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Deliveries', href: '/deliveries' }, { title: 'Details', href: '#' }];
 
@@ -30,7 +31,7 @@ export default function DeliveriesShow({ delivery }: DeliveriesShowProps) {
             <Head title={`Delivery ${delivery.sale.sale_number}`} />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Delivery Details</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Delivery Details</h1>
                 </div>
                 <div className="max-w-4xl space-y-6">
                     <div className="rounded-lg border border-sidebar-border/70 p-6 dark:border-sidebar-border">
@@ -51,28 +52,43 @@ export default function DeliveriesShow({ delivery }: DeliveriesShowProps) {
                     </div>
                     <div className="rounded-lg border border-sidebar-border/70 p-6 dark:border-sidebar-border">
                         <h2 className="text-lg font-semibold mb-4">Delivery Items</h2>
-                        <table className="w-full">
-                            <thead>
-                                <tr className="border-b">
-                                    <th className="text-left p-2">Product</th>
-                                    <th className="text-left p-2">Variant</th>
-                                    <th className="text-left p-2">Quantity</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {delivery.items.map((item) => (
-                                    <tr key={item.id} className="border-b">
-                                        <td className="p-2">{item.product_variant.product.name}</td>
-                                        <td className="p-2">{item.product_variant.description}</td>
-                                        <td className="p-2">{item.quantity}</td>
+                        <div className="space-y-3 md:hidden">
+                            {delivery.items.map((item) => (
+                                <MobileRecordCard
+                                    key={item.id}
+                                    title={item.product_variant.product.name}
+                                    subtitle={item.product_variant.description}
+                                    value={String(item.quantity)}
+                                >
+                                    <MobileRecordRow label="Quantity" value={String(item.quantity)} />
+                                </MobileRecordCard>
+                            ))}
+                        </div>
+                        <div className="hidden md:block">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="text-left p-2">Product</th>
+                                        <th className="text-left p-2">Variant</th>
+                                        <th className="text-left p-2">Quantity</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {delivery.items.map((item) => (
+                                        <tr key={item.id} className="border-b">
+                                            <td className="p-2">{item.product_variant.product.name}</td>
+                                            <td className="p-2">{item.product_variant.description}</td>
+                                            <td className="p-2">{item.quantity}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

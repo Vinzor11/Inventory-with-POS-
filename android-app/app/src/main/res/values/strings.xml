@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HIMS Mobile</string>
+    <string name="connection_error">Cannot reach server. Check network and WEB_BASE_URL.</string>
+    <string name="retry">Retry</string>
+</resources>

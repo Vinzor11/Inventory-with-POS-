@@ -11,6 +11,7 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { toast } from '@/lib/toast';
 import { formatCurrency, formatNumber } from '@/lib/format-currency';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -190,7 +191,7 @@ export default function RefundShow({ sale, saleItems, totalRefunded, remainingRe
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <div>
-                            <h1 className="text-2xl font-bold">Process Refund - Sale {sale.sale_number}</h1>
+                            <h1 className="hidden text-2xl font-bold md:block">Process Refund - Sale {sale.sale_number}</h1>
                             <p className="text-sm text-muted-foreground">Cashier: {sale.cashier.name}</p>
                         </div>
                     </div>
@@ -270,7 +271,99 @@ export default function RefundShow({ sale, saleItems, totalRefunded, remainingRe
                     <div className="p-6 border-b border-sidebar-border/70">
                         <h2 className="text-lg font-semibold">Select Items to Refund</h2>
                     </div>
-                    <div className="overflow-x-auto">
+                    <div className="space-y-3 p-4 md:hidden">
+                        {saleItems.map((item) => {
+                            const refundQty = refundQuantities[item.id] || 0;
+                            const itemRefundAmount = refundQty > 0
+                                ? (refundQty / item.quantity) * item.line_total
+                                : 0;
+                            const canceledQty = item.canceled_quantity ?? 0;
+                            const itemStatus = item.item_status ?? 'ACTIVE';
+                            const isCanceled = itemStatus === 'CANCELED';
+                            const canRefund = item.refundable_quantity > 0 && !isCanceled;
+
+                            return (
+                                <MobileRecordCard
+                                    key={`m-refund-item-${item.id}`}
+                                    title={item.product_variant.product.name}
+                                    subtitle={item.product_variant.description}
+                                    value={`₱${formatCurrency(itemRefundAmount)}`}
+                                    badges={[
+                                        isCanceled
+                                            ? { label: 'Canceled', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' }
+                                            : item.item_status === 'PARTIAL_ADJUSTED'
+                                              ? { label: 'Partial Adjusted', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200' }
+                                              : { label: 'Active', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' },
+                                    ]}
+                                >
+                                    <MobileRecordRow label="Sold Qty" value={formatNumber(item.quantity)} />
+                                    <MobileRecordRow label="Refunded" value={formatNumber(item.refunded_quantity)} />
+                                    <MobileRecordRow label="Canceled" value={formatNumber(canceledQty)} />
+                                    <MobileRecordRow label="Refundable" value={formatNumber(item.refundable_quantity)} />
+
+                                    {canRefund ? (
+                                        <>
+                                            <div className="pt-1 text-sm text-muted-foreground">Refund Qty</div>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => updateQuantity(item.id, -0.5)}
+                                                    disabled={refundQty <= 0}
+                                                >
+                                                    -
+                                                </Button>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max={item.refundable_quantity}
+                                                    step="0.5"
+                                                    value={refundQty}
+                                                    onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                                                    className="w-24 text-center"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => updateQuantity(item.id, 0.5)}
+                                                    disabled={refundQty >= item.refundable_quantity}
+                                                >
+                                                    +
+                                                </Button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-2">
+                                                <span className="text-sm text-muted-foreground">Restore Inventory</span>
+                                                <Checkbox
+                                                    checked={restoreInventory[item.id] ?? true}
+                                                    onCheckedChange={(checked) =>
+                                                        setRestoreInventory({ ...restoreInventory, [item.id]: checked === true })
+                                                    }
+                                                    disabled={refundQty === 0}
+                                                />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <MobileRecordRow
+                                            label="Refund Qty"
+                                            value={isCanceled ? 'Canceled - Cannot refund' : 'Not refundable'}
+                                        />
+                                    )}
+                                </MobileRecordCard>
+                            );
+                        })}
+
+                        <div className="rounded-lg border border-sidebar-border/70 bg-muted/50 p-4">
+                            <div className="flex items-center justify-between">
+                                <span className="font-semibold">Total Refund Amount</span>
+                                <span className="text-lg font-bold text-blue-600">₱{formatCurrency(totalRefundAmount)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
                         <table className="w-full">
                             <thead className="bg-muted/50">
                                 <tr>
@@ -441,4 +534,5 @@ export default function RefundShow({ sale, saleItems, totalRefunded, remainingRe
         </AppLayout>
     );
 }
+
 

@@ -7,6 +7,7 @@ use App\Models\ProductCategory;
 use App\Models\Product;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
+use App\Services\StockMovementService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ use Inertia\Response;
 
 class InventoryController extends Controller
 {
+    public function __construct(
+        protected StockMovementService $stockMovementService
+    ) {
+    }
+
     /**
      * Display inventory overview for all variants
      * Shows current stock levels across all products
@@ -81,17 +87,37 @@ class InventoryController extends Controller
         
         $totalStock = $hardwareStock + $agriculturalStock;
         
-        // Calculate inventory value (excluding agricultural products, using purchase_price)
-        // Only include variants that have purchase_price set and are not agricultural products
-        $query = DB::table('inventory')
+        // Calculate inventory value (excluding agricultural products) using
+        // movement-based weighted average cost with purchase_price fallback.
+        $rows = DB::table('inventory')
             ->join('product_variants', 'inventory.product_variant_id', '=', 'product_variants.id')
             ->join('products', 'product_variants.product_id', '=', 'products.id')
-            ->join('product_categories', 'products.category_id', '=', 'product_categories.id')
-            ->whereNotNull('product_variants.purchase_price')
-            ->where('product_variants.purchase_price', '>', 0)
-            ->where('product_categories.name', '!=', 'Agricultural Products');
-        
-        $inventoryValue = $query->sum(DB::raw('inventory.quantity_on_hand * product_variants.purchase_price')) ?? 0;
+            ->when($agriculturalCategoryId, function ($query) use ($agriculturalCategoryId) {
+                $query->where('products.category_id', '!=', $agriculturalCategoryId);
+            })
+            ->select([
+                'product_variants.id as product_variant_id',
+                'inventory.quantity_on_hand',
+                'product_variants.purchase_price',
+            ])
+            ->get();
+
+        $averageCosts = $this->stockMovementService->getAverageCostsForVariants(
+            $rows->pluck('product_variant_id')->all()
+        );
+
+        $inventoryValue = (float) $rows->sum(function ($row) use ($averageCosts) {
+            $averageCost = (float) ($averageCosts->get((int) $row->product_variant_id) ?? 0);
+            if ($averageCost <= 0) {
+                $averageCost = (float) ($row->purchase_price ?? 0);
+            }
+
+            if ($averageCost <= 0) {
+                return 0;
+            }
+
+            return (float) $row->quantity_on_hand * $averageCost;
+        });
         
         $lowStockItems = ProductVariant::query()
             ->with(['product.category', 'inventory'])
@@ -122,26 +148,23 @@ class InventoryController extends Controller
                         'id' => $product->category->id,
                         'name' => $product->category->name,
                     ] : null,
-                    'variants' => $product->variants->map(function ($variant) {
-                        return [
-                            'id' => $variant->id,
-                            'description' => $variant->description,
-                            'unit_price' => $variant->unit_price,
-                        ];
-                    })->toArray(),
+                    'variants' => $product->variants->map(fn ($variant) => [
+                        'id' => $variant->id,
+                        'description' => $variant->description,
+                        'unit_price' => $variant->unit_price,
+                        'current_stock' => $variant->inventory?->quantity_on_hand ?? 0,
+                        'unit' => $product->official_stock_unit ?? $product->base_unit,
+                    ])->toArray(),
                 ];
             })
             ->toArray();
 
-        // Common adjustment reasons
+        // Physical count correction reasons
         $adjustmentReasons = [
+            'physical_count' => 'Physical Count',
             'damage' => 'Damage',
-            'loss' => 'Loss/Theft',
-            'recount' => 'Recount Correction',
-            'initial_stock' => 'Initial Stock',
-            'expired' => 'Expired',
-            'returned' => 'Returned to Supplier',
-            'other' => 'Other',
+            'spoilage' => 'Spoilage',
+            'correction' => 'Correction',
         ];
 
         return Inertia::render('inventory/index', [

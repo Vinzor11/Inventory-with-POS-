@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Delivery;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Deliveries Report Query Service
@@ -69,15 +70,32 @@ class DeliveriesReportQueryService
      */
     public function getDeliveryCounts(array $filters = []): array
     {
-        $query = $this->baseQuery($filters);
+        // Count by CURRENT sale delivery status (not historical delivery trips)
+        $query = DB::table('sales')
+            ->where('is_for_delivery', true);
 
-        // Use a single query with conditional aggregation
+        if (isset($filters['date_from'])) {
+            $query->whereDate('created_at', '>=', $filters['date_from']);
+        }
+
+        if (isset($filters['date_to'])) {
+            $query->whereDate('created_at', '<=', $filters['date_to']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('delivery_status', strtoupper((string) $filters['status']));
+        }
+
+        if (isset($filters['sale_id'])) {
+            $query->where('id', $filters['sale_id']);
+        }
+
         $counts = $query
             ->selectRaw("
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) as partial,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered,
-                SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) as canceled
+                SUM(CASE WHEN delivery_status = 'PENDING' OR delivery_status IS NULL THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN delivery_status = 'PARTIAL' THEN 1 ELSE 0 END) as partial,
+                SUM(CASE WHEN delivery_status = 'DELIVERED' THEN 1 ELSE 0 END) as delivered,
+                SUM(CASE WHEN delivery_status = 'CANCELED' OR delivery_status = 'RETURNED' THEN 1 ELSE 0 END) as canceled
             ")
             ->first();
 

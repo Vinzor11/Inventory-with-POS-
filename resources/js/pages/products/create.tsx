@@ -64,7 +64,7 @@ export default function ProductsCreate({ categories }: ProductsCreateProps) {
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 <div className="flex items-center">
-                    <h1 className="text-2xl font-bold">Create Product</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Create Product</h1>
                 </div>
 
                 <div className="max-w-2xl">
@@ -174,13 +174,6 @@ export default function ProductsCreate({ categories }: ProductsCreateProps) {
                             <Button type="submit" disabled={processing}>
                                 {processing ? 'Creating...' : 'Create Product'}
                             </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => window.history.back()}
-                            >
-                                Cancel
-                            </Button>
                         </div>
                     </form>
                 </div>
@@ -188,3 +181,4 @@ export default function ProductsCreate({ categories }: ProductsCreateProps) {
         </AppLayout>
     );
 }
+

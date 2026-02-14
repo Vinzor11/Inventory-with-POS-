@@ -80,7 +80,7 @@ export default function ProductsEdit({ product, categories }: ProductsEditProps)
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 <div className="flex items-center">
-                    <h1 className="text-2xl font-bold">Edit Product</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Edit Product</h1>
                 </div>
 
                 <div className="max-w-2xl">
@@ -197,3 +197,4 @@ export default function ProductsEdit({ product, categories }: ProductsEditProps)
         </AppLayout>
     );
 }
+

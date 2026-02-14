@@ -78,7 +78,7 @@ export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
             <Head title="Create Weigh-In" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Create Weigh-In</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Create Weigh-In</h1>
                 </div>
                 <div className="max-w-2xl">
                     <form onSubmit={handleSubmit} className="space-y-6">
@@ -204,4 +204,5 @@ export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
         </AppLayout>
     );
 }
+
 

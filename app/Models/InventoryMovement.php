@@ -11,18 +11,26 @@ class InventoryMovement extends Model
 
     protected $fillable = [
         'product_variant_id',
+        'product_id',
         'quantity',
+        'qty',
         'type',
+        'movement_type',
+        'unit',
         'reason',
         'reference_id',
+        'reference_type',
         'unit_cost',
+        'total_cost',
         'notes',
         'recorded_by_user_id',
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
-        'unit_cost' => 'decimal:2',
+        'quantity' => 'decimal:4',
+        'qty' => 'decimal:4',
+        'unit_cost' => 'decimal:4',
+        'total_cost' => 'decimal:4',
     ];
 
     /**
@@ -32,6 +40,11 @@ class InventoryMovement extends Model
     public function productVariant(): BelongsTo
     {
         return $this->belongsTo(ProductVariant::class, 'product_variant_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class, 'product_id');
     }
 
     /**

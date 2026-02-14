@@ -11,13 +11,12 @@ class SalePolicy
      * Determine whether the user can void the sale.
      * 
      * VOID AUTHORIZATION RULES:
-     * - Only Admin or Manager roles can void sales
+     * - Only Admin role can void sales
      * - Sale must meet all void eligibility criteria (checked in controller)
      */
     public function void(User $user, Sale $sale): bool
     {
-        // Only Admin or Manager can void sales
-        return $user->hasRole('admin') || $user->hasRole('manager');
+        return $user->hasRole('admin');
     }
 
     /**

@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\ProductVariant;
-use App\Models\Inventory;
 use App\Models\InventoryMovement;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class WeighInInventoryService
@@ -77,47 +77,52 @@ class WeighInInventoryService
             return null;
         }
 
-        // Create inventory movement (IN)
-        $movement = InventoryMovement::create([
-            'product_variant_id' => $variant->id,
-            'quantity' => $quantity,
-            'type' => 'IN',
-            'reason' => 'weigh_in',
-            'reference_id' => $weighIn->id,
-            'unit_cost' => $weighIn->unit_price, // Purchase price from weigh-in
-            'notes' => "Weigh-in: {$weighIn->ref_num}",
-            'recorded_by_user_id' => $recordedByUserId,
-        ]);
+        return DB::transaction(function () use ($variant, $weighIn, $quantity, $recordedByUserId) {
+            /** @var \App\Services\StockMovementService $stockMovementService */
+            $stockMovementService = app(\App\Services\StockMovementService::class);
 
-        // Update inventory quantity
-        // Load inventory relationship or get from database
-        $variant->load('inventory');
-        $currentStock = $variant->inventory?->quantity_on_hand ?? 0;
-        $newStock = $currentStock + $quantity;
+            $lockedVariant = $stockMovementService->getLockedVariant($variant->id);
+            $currentStock = $stockMovementService->getCurrentStock($lockedVariant);
+            $unitCost = (float) ($weighIn->unit_price ?? 0);
+            $totalCost = round($quantity * $unitCost, 4);
+            $unit = $lockedVariant->getOfficialStockUnit();
 
-        Inventory::updateOrCreate(
-            ['product_variant_id' => $variant->id],
-            ['quantity_on_hand' => $newStock]
-        );
+            $stockMovementService->applySignedStockChange($lockedVariant, $quantity);
+            $stockMovementService->applyIncomingWeightedAverageCost(
+                $lockedVariant,
+                $quantity,
+                $totalCost,
+                $currentStock
+            );
 
-        // Update variant's purchase price if not set or if this is a better price
-        if (!$variant->purchase_price || $weighIn->unit_price > 0) {
-            $variant->update(['purchase_price' => $weighIn->unit_price]);
-        }
+            $movement = $stockMovementService->recordStockMovement(
+                (int) $lockedVariant->product_id,
+                'purchase_in',
+                $quantity,
+                $unit,
+                $unitCost > 0 ? $unitCost : null,
+                $totalCost > 0 ? $totalCost : null,
+                'WeighIn',
+                $weighIn->id,
+                "Weigh-in: {$weighIn->ref_num}",
+                $lockedVariant->id,
+                $recordedByUserId,
+                'weigh_in'
+            );
 
-        // Update variant's unit price (selling price) if not set
-        if (!$variant->unit_price || $variant->unit_price == 0) {
-            $variant->update(['unit_price' => $weighIn->unit_price]);
-        }
+            if (!$lockedVariant->unit_price || (float) $lockedVariant->unit_price == 0.0) {
+                $lockedVariant->update(['unit_price' => $unitCost]);
+            }
 
-        Log::info("Inventory movement created for weigh-in", [
-            'weigh_in_id' => $weighIn->id,
-            'variant_id' => $variant->id,
-            'quantity' => $quantity,
-            'new_stock' => $newStock,
-        ]);
+            Log::info("Inventory movement created for weigh-in", [
+                'weigh_in_id' => $weighIn->id,
+                'variant_id' => $lockedVariant->id,
+                'quantity' => $quantity,
+                'new_stock' => $currentStock + $quantity,
+            ]);
 
-        return $movement;
+            return $movement;
+        });
     }
 }
 

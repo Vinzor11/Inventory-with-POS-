@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Inventory;
 use App\Models\ProductVariant;
-use App\Models\ProductCategory;
+use App\Services\StockMovementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +13,11 @@ use Inertia\Response;
 
 class InventoryDashboardController extends Controller
 {
+    public function __construct(
+        protected StockMovementService $stockMovementService
+    ) {
+    }
+
     /**
      * Display inventory dashboard
      * Shows overview statistics and low stock alerts
@@ -31,25 +36,42 @@ class InventoryDashboardController extends Controller
             // Total product variants
             $totalVariants = ProductVariant::count();
 
-            // Get agricultural category ID
-            $agriculturalCategoryId = ProductCategory::where('name', 'Agricultural Products')
-                ->where('is_active', true)
-                ->value('id');
-
             // Total stock quantity across all variants
             $totalStock = Inventory::sum('quantity_on_hand') ?? 0;
 
-            // Calculate inventory value (excluding agricultural products, using purchase_price)
-            // Only include variants that have purchase_price set and are not agricultural products
-            $query = DB::table('inventory')
+            // Calculate inventory value (excluding agricultural products) using
+            // movement-based weighted average cost with purchase_price fallback.
+            $rows = DB::table('inventory')
                 ->join('product_variants', 'inventory.product_variant_id', '=', 'product_variants.id')
                 ->join('products', 'product_variants.product_id', '=', 'products.id')
-                ->join('product_categories', 'products.category_id', '=', 'product_categories.id')
-                ->whereNotNull('product_variants.purchase_price')
-                ->where('product_variants.purchase_price', '>', 0)
-                ->where('product_categories.name', '!=', 'Agricultural Products');
-            
-            $inventoryValue = $query->sum(DB::raw('inventory.quantity_on_hand * product_variants.purchase_price')) ?? 0;
+                ->leftJoin('product_categories', 'products.category_id', '=', 'product_categories.id')
+                ->where(function ($query) {
+                    $query->whereNull('product_categories.name')
+                        ->orWhere('product_categories.name', '!=', 'Agricultural Products');
+                })
+                ->select([
+                    'product_variants.id as product_variant_id',
+                    'inventory.quantity_on_hand',
+                    'product_variants.purchase_price',
+                ])
+                ->get();
+
+            $averageCosts = $this->stockMovementService->getAverageCostsForVariants(
+                $rows->pluck('product_variant_id')->all()
+            );
+
+            $inventoryValue = (float) $rows->sum(function ($row) use ($averageCosts) {
+                $averageCost = (float) ($averageCosts->get((int) $row->product_variant_id) ?? 0);
+                if ($averageCost <= 0) {
+                    $averageCost = (float) ($row->purchase_price ?? 0);
+                }
+
+                if ($averageCost <= 0) {
+                    return 0;
+                }
+
+                return (float) $row->quantity_on_hand * $averageCost;
+            });
 
             // Low stock items (quantity <= threshold)
             $lowStockItems = ProductVariant::query()

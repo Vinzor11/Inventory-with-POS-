@@ -2,185 +2,78 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ProductCategory;
-use App\Models\ProductVariant;
-use App\Models\Sale;
-use App\Models\SaleItem;
-use App\Models\Inventory;
-use App\Models\InventoryMovement;
+use App\Services\CookedCopraSaleService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\JsonResponse;
 
 class AgriculturalSalesController extends Controller
 {
+    public function __construct(
+        protected CookedCopraSaleService $cookedCopraSaleService
+    ) {
+    }
+
     /**
-     * Get agricultural products stock summary for inventory page
+     * Get cooked copra stock summary for inventory sell dialog.
      */
     public function getStockSummary(): JsonResponse
     {
-        $agriculturalCategory = ProductCategory::where('name', 'Agricultural Products')
-            ->where('is_active', true)
-            ->first();
-
-        if (!$agriculturalCategory) {
+        try {
+            $summary = $this->cookedCopraSaleService->getStockSummary();
+        } catch (\Throwable $e) {
             return response()->json([
                 'total_stock' => 0,
+                'unit' => 'kg',
+                'average_cost' => 0,
+                'variant' => null,
                 'variants' => [],
             ]);
         }
 
-        $variants = ProductVariant::whereHas('product', function ($query) use ($agriculturalCategory) {
-            $query->where('category_id', $agriculturalCategory->id);
-        })
-        ->with(['inventory', 'product'])
-        ->get();
-
-        $totalStock = 0;
-        $variantData = [];
-
-        foreach ($variants as $variant) {
-            $stock = $variant->inventory->quantity_on_hand ?? 0;
-            $totalStock += $stock;
-            
-            $variantData[] = [
-                'id' => $variant->id,
-                'name' => $variant->product->name,
-                'description' => $variant->description,
-                'unit_price' => $variant->unit_price,
-                'base_unit' => $variant->product->base_unit,
-                'stock' => $stock,
-            ];
-        }
-
         return response()->json([
-            'total_stock' => $totalStock,
-            'variants' => $variantData,
+            'total_stock' => $summary['stock'],
+            'unit' => $summary['unit'],
+            'average_cost' => $summary['average_cost'],
+            'variant' => $summary,
+            // Backward-compatible shape used by existing inventory page modal.
+            'variants' => [[
+                'id' => $summary['variant_id'],
+                'name' => $summary['name'],
+                'description' => $summary['description'],
+                'unit_price' => $summary['unit_price'],
+                'base_unit' => $summary['unit'],
+                'stock' => $summary['stock'],
+                'average_cost' => $summary['average_cost'],
+            ]],
         ]);
     }
 
     /**
-     * Process Agricultural Products sale - treats all as one product
+     * Process cooked copra stock-out sale.
      */
     public function checkout(Request $request): RedirectResponse
     {
         $request->validate([
-            'quantity' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0.0001',
+            'unit_price' => 'nullable|numeric|min:0.0001',
+            'sale_date' => 'nullable|date',
+            'customer_name' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
 
         try {
-            $sale = DB::transaction(function () use ($request) {
-                $agriculturalCategory = ProductCategory::where('name', 'Agricultural Products')
-                    ->where('is_active', true)
-                    ->first();
-
-                if (!$agriculturalCategory) {
-                    throw new \Exception("Agricultural Products category not found.");
-                }
-
-                // Get all agricultural product variants
-                $variants = ProductVariant::whereHas('product', function ($query) use ($agriculturalCategory) {
-                    $query->where('category_id', $agriculturalCategory->id);
-                })
-                ->with(['inventory', 'product'])
-                ->get();
-
-                if ($variants->isEmpty()) {
-                    throw new \Exception("No agricultural products found.");
-                }
-
-                // Calculate total available stock
-                $totalAvailableStock = $variants->sum(function ($variant) {
-                    return $variant->inventory->quantity_on_hand ?? 0;
-                });
-
-                $requestedQuantity = $request->quantity;
-
-                // Validate stock availability
-                if ($requestedQuantity > $totalAvailableStock) {
-                    throw new \Exception(
-                        "Insufficient stock. Available: {$totalAvailableStock}, Requested: {$requestedQuantity}"
-                    );
-                }
-
-                // Create sale
-                $sale = Sale::create([
-                    'sale_number' => Sale::generateSaleNumber(),
-                    'status' => 'COMPLETED',
-                    'payment_status' => 'UNPAID',
-                    'is_for_delivery' => false,
-                    'subtotal' => 0, // Will calculate from items
-                    'total' => 0,
-                    'notes' => $request->notes ?? 'Agricultural Products Sale',
-                    'cashier_user_id' => auth()->id(),
-                ]);
-
-                $totalSaleAmount = 0;
-                $remainingQuantity = $requestedQuantity;
-
-                // Distribute quantity across variants proportionally
-                foreach ($variants as $variant) {
-                    if ($remainingQuantity <= 0) break;
-
-                    $variantStock = $variant->inventory->quantity_on_hand ?? 0;
-                    if ($variantStock <= 0) continue;
-
-                    // Take as much as possible from this variant
-                    $quantityToDeduct = min($variantStock, $remainingQuantity);
-                    
-                    $unitPrice = $variant->unit_price;
-                    $lineTotal = $quantityToDeduct * $unitPrice;
-                    $totalSaleAmount += $lineTotal;
-
-                    // Create sale item
-                    SaleItem::create([
-                        'sale_id' => $sale->id,
-                        'product_variant_id' => $variant->id,
-                        'quantity' => $quantityToDeduct,
-                        'unit_price' => $unitPrice,
-                        'line_total' => $lineTotal,
-                    ]);
-
-                    // Deduct inventory
-                    $newStock = $variantStock - $quantityToDeduct;
-
-                    // Create inventory movement (OUT)
-                    InventoryMovement::create([
-                        'product_variant_id' => $variant->id,
-                        'quantity' => $quantityToDeduct,
-                        'type' => 'OUT',
-                        'reason' => 'sale',
-                        'reference_id' => $sale->id,
-                        'unit_cost' => null,
-                        'notes' => "Agricultural Sale: {$sale->sale_number}",
-                        'recorded_by_user_id' => auth()->id(),
-                    ]);
-
-                    // Update inventory quantity
-                    Inventory::updateOrCreate(
-                        ['product_variant_id' => $variant->id],
-                        ['quantity_on_hand' => $newStock]
-                    );
-
-                    $remainingQuantity -= $quantityToDeduct;
-                }
-
-                // Update sale totals
-                $sale->update([
-                    'subtotal' => $totalSaleAmount,
-                    'total' => $totalSaleAmount,
-                ]);
-
-                $sale->computeSaleStatus();
-
-                return $sale;
-            });
+            $sale = $this->cookedCopraSaleService->createSale([
+                'quantity' => $request->input('quantity'),
+                'unit_price' => $request->input('unit_price'),
+                'sale_date' => $request->input('sale_date'),
+                'customer_name' => $request->input('customer_name'),
+                'notes' => $request->input('notes'),
+            ], (int) auth()->id());
 
             return redirect()->route('inventory.index')
-                ->with('success', 'Agricultural products sold successfully.');
+                ->with('success', 'Cooked copra sale recorded. Ref: ' . $sale->sale_number);
         } catch (\Exception $e) {
             throw ValidationException::withMessages([
                 'checkout' => [$e->getMessage()],

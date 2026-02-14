@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateWeighInPriceRequest;
 use App\Models\WeighInPrice;
+use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -33,6 +34,10 @@ class WeighInPricesController extends Controller
      */
     public function update(UpdateWeighInPriceRequest $request, string $type): RedirectResponse
     {
+        if (!$request->user()?->isAdmin()) {
+            abort(403, 'Only administrators can update weigh-in prices.');
+        }
+
         $validated = $request->validated();
 
         WeighInPrice::updateOrCreate(

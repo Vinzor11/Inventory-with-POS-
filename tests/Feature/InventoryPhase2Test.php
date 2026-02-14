@@ -22,6 +22,7 @@ class InventoryPhase2Test extends TestCase
         // Create a test user
         $this->user = User::factory()->create([
             'email' => 'admin@example.com',
+            'role' => 'admin',
         ]);
     }
 
@@ -90,7 +91,7 @@ class InventoryPhase2Test extends TestCase
             'notes' => 'Test stock-in',
         ]);
 
-        $this->assertDatabaseHas('inventories', [
+        $this->assertDatabaseHas('inventory', [
             'product_variant_id' => $variant->id,
             'quantity_on_hand' => 10,
         ]);
@@ -144,7 +145,7 @@ class InventoryPhase2Test extends TestCase
             'notes' => 'Damaged items removed',
         ]);
 
-        $this->assertDatabaseHas('inventories', [
+        $this->assertDatabaseHas('inventory', [
             'product_variant_id' => $variant->id,
             'quantity_on_hand' => 5,
         ]);

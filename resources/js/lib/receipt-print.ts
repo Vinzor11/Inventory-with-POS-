@@ -416,7 +416,7 @@ export function cleanReceiptText(receiptText: string): string {
     // ESC commands start with \x1B (27) followed by command byte and optional parameters
     // GS commands start with \x1D (29) followed by command byte and optional parameters
     
-    let cleaned = receiptText
+    const cleaned = receiptText
         // Remove ESC @ (initialize printer) - \x1B\x40
         .replace(/\x1B@/g, '')
         .replace(/\x1B\x40/g, '')

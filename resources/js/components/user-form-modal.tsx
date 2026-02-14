@@ -17,6 +17,8 @@ interface User {
     id: number;
     name: string;
     email: string;
+    role?: 'admin' | 'staff';
+    is_active?: boolean;
     email_verified_at: string | null;
     pin?: string | null;
     has_pin?: boolean;
@@ -46,6 +48,8 @@ export function UserFormModal({ isOpen, onClose, user, mode = 'create', onSucces
     const { data, setData, post, put, processing, errors, reset } = useForm({
         name: user?.name || '',
         email: user?.email || '',
+        role: user?.role || 'staff',
+        is_active: user?.is_active ?? true,
         password: '',
         password_confirmation: '',
         pin: '',
@@ -56,6 +60,10 @@ export function UserFormModal({ isOpen, onClose, user, mode = 'create', onSucces
             setData({
                 name: user.name,
                 email: user.email,
+                role: user.role || 'staff',
+                is_active: user.is_active ?? true,
+                password: '',
+                password_confirmation: '',
                 pin: '',
             });
         } else {
@@ -142,6 +150,36 @@ export function UserFormModal({ isOpen, onClose, user, mode = 'create', onSucces
                         </div>
                         {(isEditing || isCreating) && (
                             <>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="role">Role</Label>
+                                    <select
+                                        id="role"
+                                        value={data.role}
+                                        onChange={(e) => setData('role', e.target.value as 'admin' | 'staff')}
+                                        className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    >
+                                        <option value="staff">Staff</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                    {errors.role && (
+                                        <p className="text-sm text-red-600">{errors.role}</p>
+                                    )}
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="is_active">Account Status</Label>
+                                    <select
+                                        id="is_active"
+                                        value={data.is_active ? '1' : '0'}
+                                        onChange={(e) => setData('is_active', e.target.value === '1')}
+                                        className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    >
+                                        <option value="1">Active</option>
+                                        <option value="0">Inactive</option>
+                                    </select>
+                                    {errors.is_active && (
+                                        <p className="text-sm text-red-600">{errors.is_active}</p>
+                                    )}
+                                </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="password">
                                         Password {isEditing && '(leave blank to keep current)'}
@@ -244,12 +282,34 @@ export function UserFormModal({ isOpen, onClose, user, mode = 'create', onSucces
                         )}
                         {isViewMode && user && (
                             <div className="grid gap-2">
+                                <Label htmlFor="view-role">Role</Label>
+                                <Input
+                                    id="view-role"
+                                    value={user.role === 'admin' ? 'Admin' : 'Staff'}
+                                    readOnly
+                                    className="bg-gray-50 dark:bg-gray-800"
+                                />
+                            </div>
+                        )}
+                        {isViewMode && user && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="view-status">Account Status</Label>
+                                <Input
+                                    id="view-status"
+                                    value={user.is_active === false ? 'Inactive' : 'Active'}
+                                    readOnly
+                                    className="bg-gray-50 dark:bg-gray-800"
+                                />
+                            </div>
+                        )}
+                        {isViewMode && user && (
+                            <div className="grid gap-2">
                                 <Label htmlFor="pin">PIN</Label>
                                 <div className="relative">
                                     <Input
                                         id="pin"
                                         type={showPin ? 'text' : 'password'}
-                                        value={user.pin ? (showPin ? user.pin : '••••••••••••••••') : 'Not set'}
+                                        value={user.pin ? (showPin ? user.pin : '****************') : 'Not set'}
                                         readOnly
                                         className="pr-10 bg-gray-50 dark:bg-gray-800"
                                     />

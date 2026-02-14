@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/format-currency';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { toast } from '@/lib/toast';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -137,7 +138,7 @@ export default function UnpaidWeighIns({ transactions }: UnpaidWeighInsProps) {
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold">Unpaid Weigh-Ins</h1>
+                        <h1 className="hidden text-2xl font-bold md:block">Unpaid Weigh-Ins</h1>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                             View and mark unpaid weigh-in transactions as paid
                         </p>
@@ -153,7 +154,32 @@ export default function UnpaidWeighIns({ transactions }: UnpaidWeighInsProps) {
 
                 {transactions.length > 0 ? (
                     <div className="rounded-lg border">
-                        <div className="overflow-x-auto">
+                        <div className="space-y-3 p-4 md:hidden">
+                            {transactions.map((transaction) => (
+                                <MobileRecordCard
+                                    key={transaction.id}
+                                    title={transaction.ref_num}
+                                    subtitle={transaction.weighed_by?.name || 'N/A'}
+                                    value={formatCurrency(transaction.total_amount)}
+                                    badges={[{ label: 'Unpaid', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' }]}
+                                    footer={
+                                        <Button
+                                            type="button"
+                                            className="h-11 w-full bg-green-600 hover:bg-green-700"
+                                            onClick={() => handleMarkAsPaid(transaction)}
+                                        >
+                                            <Check className="mr-1 h-4 w-4" />
+                                            Mark as Paid
+                                        </Button>
+                                    }
+                                >
+                                    <MobileRecordRow label="Weighed At" value={formatDate(transaction.weighed_at)} />
+                                    <MobileRecordRow label="Items" value={`${transaction.weigh_ins.length}`} />
+                                </MobileRecordCard>
+                            ))}
+                        </div>
+
+                        <div className="hidden overflow-x-auto md:block">
                             <table className="w-full">
                                 <thead>
                                     <tr className="border-b">
@@ -282,4 +308,5 @@ export default function UnpaidWeighIns({ transactions }: UnpaidWeighInsProps) {
         </AppLayout>
     );
 }
+
 

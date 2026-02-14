@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useForm, router } from '@inertiajs/react';
+import { useForm } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,6 +25,7 @@ interface ManagePricesModalProps {
     isOpen: boolean;
     onClose: () => void;
     prices: Prices;
+    canEdit: boolean;
     onSuccess?: () => void;
 }
 
@@ -42,7 +43,13 @@ const priceTypeUnits: Record<PriceType, string> = {
     coconut: 'per piece',
 };
 
-export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: ManagePricesModalProps) {
+export function ManagePricesModal({
+    isOpen,
+    onClose,
+    prices,
+    canEdit,
+    onSuccess,
+}: ManagePricesModalProps) {
     const [selectedPriceType, setSelectedPriceType] = useState<PriceType>('cooked_copra');
     
     const { data, setData, put, processing, errors, reset } = useForm({
@@ -66,6 +73,11 @@ export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: Manage
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!canEdit) {
+            toast.error('Only administrators can update prices.');
+            return;
+        }
+
         put(`/weigh-ins/prices/${selectedPriceType}`, {
             preserveState: true,
             preserveScroll: true,
@@ -102,6 +114,11 @@ export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: Manage
                         Select a price type and update its value.
                     </DialogDescription>
                 </DialogHeader>
+                {!canEdit && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        Prices are read-only for staff accounts.
+                    </div>
+                )}
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-4 py-4">
                         <div>
@@ -109,6 +126,7 @@ export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: Manage
                             <Select
                                 value={selectedPriceType}
                                 onValueChange={handlePriceTypeChange}
+                                disabled={!canEdit}
                             >
                                 <SelectTrigger id="price_type">
                                     <SelectValue placeholder="Select price type" />
@@ -133,6 +151,7 @@ export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: Manage
                                 value={data.price}
                                 onChange={(e) => setData('price', e.target.value)}
                                 placeholder="0.00"
+                                disabled={!canEdit}
                                 required
                             />
                             {errors.price && (
@@ -147,7 +166,7 @@ export function ManagePricesModal({ isOpen, onClose, prices, onSuccess }: Manage
                         <Button type="button" variant="outline" onClick={handleClose}>
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={processing}>
+                        <Button type="submit" disabled={!canEdit || processing}>
                             {processing ? 'Updating...' : `Update ${priceTypeLabels[selectedPriceType]} Price`}
                         </Button>
                     </DialogFooter>

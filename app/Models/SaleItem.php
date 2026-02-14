@@ -14,6 +14,9 @@ class SaleItem extends Model
         'quantity',
         'unit_price',
         'line_total',
+        'unit_cost',
+        'total_cost',
+        'profit',
         'delivered_quantity',
         'canceled_quantity',
         'item_status',
@@ -23,9 +26,25 @@ class SaleItem extends Model
         'quantity' => 'decimal:2',
         'unit_price' => 'decimal:2',
         'line_total' => 'decimal:2',
+        'unit_cost' => 'decimal:4',
+        'total_cost' => 'decimal:4',
+        'profit' => 'decimal:4',
         'delivered_quantity' => 'decimal:2',
         'canceled_quantity' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        $recheckPendingPrice = function (SaleItem $saleItem): void {
+            $variant = $saleItem->productVariant()->first();
+            if ($variant) {
+                $variant->applyPendingUnitPriceIfEligible();
+            }
+        };
+
+        static::saved($recheckPendingPrice);
+        static::deleted($recheckPendingPrice);
+    }
 
     /**
      * Relationship: SaleItem belongs to a Sale

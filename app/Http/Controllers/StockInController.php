@@ -3,31 +3,34 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StockInRequest;
-use App\Models\Inventory;
-use App\Models\InventoryMovement;
 use App\Models\Product;
-use App\Models\ProductVariant;
+use App\Services\PurchaseService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class StockInController extends Controller
 {
+    public function __construct(
+        protected PurchaseService $purchaseService
+    ) {
+    }
+
     /**
      * Display the stock-in form
      * Shows product and variant selection for receiving stock
      */
     public function create(Request $request): Response
     {
+        $this->authorize('can_receive_stock');
+
         // Get active products with their categories and variants
         $products = Product::where('is_active', true)
             ->with([
                 'category:id,name',
                 'variants' => function ($query) {
-                    $query->orderBy('description');
+                    $query->with('inventory')->orderBy('description');
                 }
             ])
             ->orderBy('name')
@@ -40,13 +43,13 @@ class StockInController extends Controller
                         'id' => $product->category->id,
                         'name' => $product->category->name,
                     ] : null,
-                    'variants' => $product->variants->map(function ($variant) {
-                        return [
-                            'id' => $variant->id,
-                            'description' => $variant->description,
-                            'unit_price' => $variant->unit_price,
-                        ];
-                    })->toArray(),
+                    'variants' => $product->variants->map(fn ($variant) => [
+                        'id' => $variant->id,
+                        'description' => $variant->description,
+                        'unit_price' => $variant->unit_price,
+                        'current_stock' => $variant->inventory?->quantity_on_hand ?? 0,
+                        'unit' => $product->official_stock_unit ?? $product->base_unit,
+                    ])->toArray(),
                 ];
             })
             ->toArray();
@@ -69,39 +72,25 @@ class StockInController extends Controller
      */
     public function store(StockInRequest $request): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
-            $variant = ProductVariant::findOrFail($request->product_variant_id);
-            
-            // Get current stock
-            $currentStock = $variant->inventory->quantity_on_hand ?? 0;
-            $newStock = $currentStock + $request->quantity;
+        $this->authorize('can_receive_stock');
 
-            // Create inventory movement record (audit trail)
-            InventoryMovement::create([
-                'product_variant_id' => $variant->id,
-                'quantity' => $request->quantity,
-                'type' => 'IN',
-                'reason' => 'purchase',
-                'unit_cost' => $request->unit_cost, // Required for IN
-                'notes' => $request->notes,
-                'recorded_by_user_id' => auth()->id(),
-            ]);
-
-            // Update purchase_price to reflect the latest purchase cost
-            $variant->update([
-                'purchase_price' => $request->unit_cost,
-            ]);
-
-            // Update inventory quantity
-            Inventory::updateOrCreate(
-                ['product_variant_id' => $variant->id],
-                ['quantity_on_hand' => $newStock]
+        try {
+            $receipt = $this->purchaseService->receiveStock(
+                $request->validated(),
+                (int) $request->user()->id
             );
-        });
+        } catch (\Throwable $e) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors([
+                    'stock_in' => $e->getMessage(),
+                ]);
+        }
 
         // Preserve the dashboard state in session and redirect
         return redirect()->route('inventory.index')
-                        ->with('success', 'Stock received successfully.')
+                        ->with('success', 'Stock received successfully. Ref: ' . $receipt->reference_code)
                         ->with('preserve_ui_state', true);
     }
 }

@@ -15,11 +15,16 @@ class Product extends Model
         'sku',
         'image',
         'base_unit',
+        'official_stock_unit',
+        'stock_qty',
+        'is_weighed',
         'track_stock',
         'is_active',
     ];
 
     protected $casts = [
+        'stock_qty' => 'decimal:4',
+        'is_weighed' => 'boolean',
         'track_stock' => 'boolean',
         'is_active' => 'boolean',
     ];

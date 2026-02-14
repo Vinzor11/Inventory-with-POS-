@@ -9,6 +9,8 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { FilterSheetButton } from '@/components/mobile/filter-sheet-button';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -154,19 +156,63 @@ export default function DeliveriesReport({ deliveries, filters }: DeliveriesRepo
         triggerFetch({ page });
     };
 
+    const hasActiveFilters = Boolean(dateFrom) || Boolean(dateTo) || status !== 'all';
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Deliveries Report" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Deliveries Report</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Deliveries Report</h1>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Complete delivery history with partial and full deliveries
                     </p>
                 </div>
 
                 {/* Filters */}
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="flex justify-end md:hidden">
+                    <FilterSheetButton title="Delivery Filters" isActive={hasActiveFilters}>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date From</label>
+                            <Input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date To</label>
+                            <Input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Status</label>
+                            <Select
+                                value={status}
+                                onValueChange={(value) => {
+                                    setStatus(value);
+                                    triggerFetch({ status: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    <SelectItem value="pending">Pending</SelectItem>
+                                    <SelectItem value="partial">Partial</SelectItem>
+                                    <SelectItem value="delivered">Delivered</SelectItem>
+                                    <SelectItem value="canceled">Canceled</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </FilterSheetButton>
+                </div>
+
+                <div className="hidden gap-4 md:grid md:grid-cols-3">
                     <div>
                         <label className="text-sm font-medium mb-1 block">Date From</label>
                         <Input
@@ -210,32 +256,72 @@ export default function DeliveriesReport({ deliveries, filters }: DeliveriesRepo
                 <div className="grid gap-4 md:grid-cols-4">
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Pending</div>
-                        <div className="text-2xl font-bold">
+                        <div className="hidden text-2xl font-bold md:block">
                             {deliveries.data.filter(d => d.status === 'pending').length}
                         </div>
                     </div>
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Partial</div>
-                        <div className="text-2xl font-bold">
+                        <div className="hidden text-2xl font-bold md:block">
                             {deliveries.data.filter(d => d.status === 'partial').length}
                         </div>
                     </div>
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Delivered</div>
-                        <div className="text-2xl font-bold">
+                        <div className="hidden text-2xl font-bold md:block">
                             {deliveries.data.filter(d => d.status === 'delivered').length}
                         </div>
                     </div>
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Canceled</div>
-                        <div className="text-2xl font-bold">
+                        <div className="hidden text-2xl font-bold md:block">
                             {deliveries.data.filter(d => d.status === 'canceled').length}
                         </div>
                     </div>
                 </div>
 
                 {/* Table */}
-                <div className="rounded-lg border">
+                <div className="space-y-3 md:hidden">
+                    {deliveries.data.map((delivery) => {
+                        const statusClass =
+                            delivery.status === 'partial'
+                                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'
+                                : delivery.status === 'delivered'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                                  : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+
+                        return (
+                            <MobileRecordCard
+                                key={delivery.id}
+                                title={delivery.sale.sale_number}
+                                subtitle={delivery.delivered_by?.name || 'N/A'}
+                                value={`${delivery.items.length} item(s)`}
+                                badges={[{ label: delivery.status, className: statusClass }]}
+                                footer={
+                                    <Button
+                                        type="button"
+                                        className="h-11 w-full"
+                                        onClick={() => router.visit(`/deliveries/${delivery.id}`)}
+                                    >
+                                        View Details
+                                    </Button>
+                                }
+                            >
+                                <MobileRecordRow
+                                    label="Date"
+                                    value={new Date(delivery.delivered_at).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                    })}
+                                />
+                                <MobileRecordRow label="Notes" value={delivery.notes || '-'} />
+                            </MobileRecordCard>
+                        );
+                    })}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
@@ -289,20 +375,40 @@ export default function DeliveriesReport({ deliveries, filters }: DeliveriesRepo
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between">
-                    <RowsPerPageSelector
-                        value={parseInt(perPage, 10)}
-                        onChange={handlePerPageChange}
-                        options={PER_PAGE_OPTIONS}
-                    />
+                <div className="hidden md:block">
                     <Pagination
                         currentPage={deliveries.current_page}
-                        totalPages={deliveries.last_page}
+                        lastPage={deliveries.last_page}
+                        total={deliveries.total}
+                        perPage={deliveries.per_page}
                         onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
+                    />
+                </div>
+
+                <div className="md:hidden">
+                    <Pagination
+                        currentPage={deliveries.current_page}
+                        lastPage={deliveries.last_page}
+                        total={deliveries.total}
+                        perPage={deliveries.per_page}
+                        onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
                     />
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

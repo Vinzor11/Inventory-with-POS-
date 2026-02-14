@@ -184,7 +184,7 @@ class SalesController extends Controller
      * - No refunds exist: refund_total = 0
      * - Sale is not already VOIDED: sale_status != VOIDED
      * - Sale is not REFUNDED or PARTIALLY_REFUNDED
-     * - User is authorized: Admin or Manager role only
+     * - User is authorized: Admin role only
      * 
      * WHEN a sale CANNOT be voided:
      * - Any item has delivered_quantity > 0
@@ -342,6 +342,10 @@ class SalesController extends Controller
      */
     public function cancelItem(Request $request, Sale $sale): RedirectResponse
     {
+        if ($sale->is_for_delivery && !$request->user()?->isAdmin()) {
+            abort(403, 'Only administrators can cancel items for delivery orders.');
+        }
+
         $request->validate([
             'sale_item_id' => 'required|exists:sale_items,id',
             'quantity_to_cancel' => 'nullable|numeric|min:0.01',

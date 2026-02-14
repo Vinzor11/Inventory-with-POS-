@@ -32,6 +32,22 @@ class AuthenticationTest extends TestCase
         $response->assertRedirect(route('dashboard', absolute: false));
     }
 
+    public function test_inactive_users_cannot_authenticate_using_the_login_screen()
+    {
+        $user = User::factory()->withoutTwoFactor()->create([
+            'is_active' => false,
+        ]);
+
+        $response = $this->from(route('login'))->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response->assertRedirect(route('login'));
+        $response->assertSessionHasErrors('email');
+    }
+
     public function test_users_with_two_factor_enabled_are_redirected_to_two_factor_challenge()
     {
         if (! Features::canManageTwoFactorAuthentication()) {
@@ -81,6 +97,21 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
         $response->assertRedirect(route('home'));
+    }
+
+    public function test_deactivated_users_are_logged_out_from_protected_pages()
+    {
+        $user = User::factory()->create([
+            'role' => 'admin',
+            'is_active' => false,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('dashboard'));
+
+        $response->assertRedirect(route('account.deactivated', [
+            'message' => 'Your account has been deactivated. Contact an administrator.',
+        ]));
+        $this->assertGuest();
     }
 
     public function test_users_are_rate_limited()

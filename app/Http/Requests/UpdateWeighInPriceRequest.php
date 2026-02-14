@@ -11,7 +11,7 @@ class UpdateWeighInPriceRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true; // Authorization handled by policies
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**

@@ -24,6 +24,8 @@ interface ProductVariant {
     id: number;
     description: string;
     unit_price: number;
+    current_stock?: number;
+    unit?: string;
 }
 
 interface Product {
@@ -47,7 +49,7 @@ export function AdjustmentModal({ isOpen, onClose, products, reasons, preselecte
     const { data, setData, post, processing, errors, reset } = useForm({
         product_id: '',
         product_variant_id: '',
-        quantity: '',
+        actual_quantity: '',
         reason: '',
         notes: '',
     });
@@ -135,7 +137,7 @@ export function AdjustmentModal({ isOpen, onClose, products, reasons, preselecte
                 </DialogHeader>
                 <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 mb-4 dark:border-yellow-800 dark:bg-yellow-900/20">
                     <p className="text-xs text-yellow-800 dark:text-yellow-200">
-                        <strong>Note:</strong> Quantity can be positive (add) or negative (subtract).
+                        <strong>Note:</strong> Enter actual physical count; the system computes the adjustment difference.
                     </p>
                 </div>
                 <form onSubmit={handleSubmit}>
@@ -155,6 +157,9 @@ export function AdjustmentModal({ isOpen, onClose, products, reasons, preselecte
                                         <Label>Variant</Label>
                                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                                             {selectedVariant.description}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Current stock: {selectedVariant.current_stock ?? 0} {selectedVariant.unit ?? ''}
                                         </p>
                                     </div>
                                 </div>
@@ -217,21 +222,22 @@ export function AdjustmentModal({ isOpen, onClose, products, reasons, preselecte
                             
                             <div className="space-y-4">
                                 <div>
-                                    <Label htmlFor="quantity">Quantity *</Label>
+                                    <Label htmlFor="actual_quantity">Actual Count *</Label>
                                     <Input
-                                        id="quantity"
+                                        id="actual_quantity"
                                         type="number"
                                         step="0.01"
-                                        value={data.quantity || ''}
-                                        onChange={(e) => setData('quantity', e.target.value)}
-                                        placeholder="Positive to add, negative to subtract"
+                                        min="0"
+                                        value={data.actual_quantity || ''}
+                                        onChange={(e) => setData('actual_quantity', e.target.value)}
+                                        placeholder="Physically counted stock"
                                         required
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
-                                        Use positive numbers to add stock, negative numbers to subtract stock
+                                        Difference from current stock will be posted as adjustment.
                                     </p>
-                                    {errors.quantity && (
-                                        <p className="text-sm text-red-600 mt-1">{errors.quantity}</p>
+                                    {errors.actual_quantity && (
+                                        <p className="text-sm text-red-600 mt-1">{errors.actual_quantity}</p>
                                     )}
                                 </div>
 

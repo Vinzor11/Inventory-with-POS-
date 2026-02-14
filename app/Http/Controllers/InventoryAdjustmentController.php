@@ -3,31 +3,34 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\InventoryAdjustmentRequest;
-use App\Models\Inventory;
-use App\Models\InventoryMovement;
 use App\Models\Product;
-use App\Models\ProductVariant;
+use App\Services\StockAdjustmentService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class InventoryAdjustmentController extends Controller
 {
+    public function __construct(
+        protected StockAdjustmentService $stockAdjustmentService
+    ) {
+    }
+
     /**
      * Display the inventory adjustment form
      * Used for damage, loss, recount, initial stock, etc.
      */
     public function create(Request $request): Response
     {
+        $this->authorize('can_adjust_stock');
+
         // Get active products with their categories and variants
         $products = Product::where('is_active', true)
             ->with([
                 'category:id,name',
                 'variants' => function ($query) {
-                    $query->orderBy('description');
+                    $query->with('inventory')->orderBy('description');
                 }
             ])
             ->orderBy('name')
@@ -40,26 +43,23 @@ class InventoryAdjustmentController extends Controller
                         'id' => $product->category->id,
                         'name' => $product->category->name,
                     ] : null,
-                    'variants' => $product->variants->map(function ($variant) {
-                        return [
-                            'id' => $variant->id,
-                            'description' => $variant->description,
-                            'unit_price' => $variant->unit_price,
-                        ];
-                    })->toArray(),
+                    'variants' => $product->variants->map(fn ($variant) => [
+                        'id' => $variant->id,
+                        'description' => $variant->description,
+                        'unit_price' => $variant->unit_price,
+                        'current_stock' => $variant->inventory?->quantity_on_hand ?? 0,
+                        'unit' => $product->official_stock_unit ?? $product->base_unit,
+                    ])->toArray(),
                 ];
             })
             ->toArray();
 
-        // Common adjustment reasons
+        // Physical count correction reasons
         $reasons = [
+            'physical_count' => 'Physical Count',
             'damage' => 'Damage',
-            'loss' => 'Loss/Theft',
-            'recount' => 'Recount Correction',
-            'initial_stock' => 'Initial Stock',
-            'expired' => 'Expired',
-            'returned' => 'Returned to Supplier',
-            'other' => 'Other',
+            'spoilage' => 'Spoilage',
+            'correction' => 'Correction',
         ];
 
         return Inertia::render('inventory/adjustment', [
@@ -83,41 +83,23 @@ class InventoryAdjustmentController extends Controller
      */
     public function store(InventoryAdjustmentRequest $request): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
-            $variant = ProductVariant::findOrFail($request->product_variant_id);
-            
-            // Get current stock
-            $currentStock = $variant->inventory->quantity_on_hand ?? 0;
-            $newStock = $currentStock + $request->quantity; // Can be positive or negative
+        $this->authorize('can_adjust_stock');
 
-            // Determine movement type based on quantity
-            $type = $request->quantity > 0 ? 'IN' : 'OUT';
-            $quantity = abs($request->quantity);
-
-            // Prevent negative stock for OUT movements
-            if ($newStock < 0) {
-                throw new \Exception('Insufficient stock for this adjustment. Current stock: ' . $currentStock);
-            }
-
-            // Create inventory movement record (audit trail)
-            InventoryMovement::create([
-                'product_variant_id' => $variant->id,
-                'quantity' => $quantity,
-                'type' => $type,
-                'reason' => $request->reason,
-                'unit_cost' => null, // NULL for adjustments (OUT movements)
-                'notes' => $request->notes, // Required for adjustments
-                'recorded_by_user_id' => auth()->id(),
-            ]);
-
-            // Update inventory quantity
-            Inventory::updateOrCreate(
-                ['product_variant_id' => $variant->id],
-                ['quantity_on_hand' => $newStock]
+        try {
+            $movement = $this->stockAdjustmentService->adjustStock(
+                $request->validated(),
+                (int) $request->user()->id
             );
-        });
+        } catch (\Throwable $e) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors([
+                    'adjustment' => $e->getMessage(),
+                ]);
+        }
 
         return redirect()->route('inventory.index')
-                        ->with('success', 'Inventory adjusted successfully.');
+                        ->with('success', 'Inventory adjusted successfully. Movement #' . $movement->id);
     }
 }

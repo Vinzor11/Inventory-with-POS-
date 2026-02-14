@@ -10,6 +10,14 @@ use Illuminate\Validation\Rule;
 class StoreUserRequest extends FormRequest
 {
     /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        return $this->user()?->isAdmin() ?? false;
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
@@ -34,6 +42,7 @@ class StoreUserRequest extends FormRequest
                 Rule::unique(User::class),
             ],
             'role' => ['nullable', 'string', Rule::in(['admin', 'staff'])],
+            'is_active' => ['nullable', 'boolean'],
         ];
     }
 }

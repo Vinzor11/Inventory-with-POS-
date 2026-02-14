@@ -9,6 +9,8 @@ import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { formatCurrency } from '@/lib/format-currency';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { FilterSheetButton } from '@/components/mobile/filter-sheet-button';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -175,19 +177,108 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
         .filter(w => w.type === 'coconut')
         .reduce((sum, weighIn) => sum + parseInt(String(weighIn.count || 0), 10), 0);
 
+    const hasActiveFilters =
+        Boolean(dateFrom)
+        || Boolean(dateTo)
+        || type !== 'all'
+        || status !== 'all'
+        || weighedByUserId !== 'all';
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Weigh-Ins Report" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Weigh-Ins Report</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Weigh-Ins Report</h1>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Complete weigh-ins history with filters and drill-down capabilities
                     </p>
                 </div>
 
                 {/* Filters */}
-                <div className="grid gap-4 md:grid-cols-5">
+                <div className="flex justify-end md:hidden">
+                    <FilterSheetButton title="Weigh-In Filters" isActive={hasActiveFilters}>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date From</label>
+                            <Input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date To</label>
+                            <Input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Type</label>
+                            <Select
+                                value={type}
+                                onValueChange={(value) => {
+                                    setType(value);
+                                    triggerFetch({ type: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Types" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Types</SelectItem>
+                                    <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
+                                    <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
+                                    <SelectItem value="coconut">Coconut</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Status</label>
+                            <Select
+                                value={status}
+                                onValueChange={(value) => {
+                                    setStatus(value);
+                                    triggerFetch({ status: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Weighed By</label>
+                            <Select
+                                value={weighedByUserId}
+                                onValueChange={(value) => {
+                                    setWeighedByUserId(value);
+                                    triggerFetch({ weighed_by_user_id: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Users" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Users</SelectItem>
+                                    {users.map((user) => (
+                                        <SelectItem key={user.id} value={String(user.id)}>
+                                            {user.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </FilterSheetButton>
+                </div>
+
+                <div className="hidden gap-4 md:grid md:grid-cols-5">
                     <div>
                         <label className="text-sm font-medium mb-1 block">Date From</label>
                         <Input
@@ -271,20 +362,69 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
                 <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Total Amount</div>
-                        <div className="text-2xl font-bold">{formatCurrency(totalAmount)}</div>
+                        <div className="hidden text-2xl font-bold md:block">{formatCurrency(totalAmount)}</div>
                     </div>
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Total Weight (kg)</div>
-                        <div className="text-2xl font-bold">{Number(totalWeight || 0).toFixed(2)} kg</div>
+                        <div className="hidden text-2xl font-bold md:block">{Number(totalWeight || 0).toFixed(2)} kg</div>
                     </div>
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Total Count (Coconuts)</div>
-                        <div className="text-2xl font-bold">{totalCount}</div>
+                        <div className="hidden text-2xl font-bold md:block">{totalCount}</div>
                     </div>
                 </div>
 
                 {/* Table */}
-                <div className="rounded-lg border">
+                <div className="space-y-3 md:hidden">
+                    {weighIns.data.map((weighIn) => (
+                        <MobileRecordCard
+                            key={weighIn.id}
+                            title={weighIn.ref_num}
+                            subtitle={weighIn.weighed_by.name}
+                            value={formatCurrency(weighIn.total_amount)}
+                            badges={[
+                                {
+                                    label: weighIn.type,
+                                    className:
+                                        weighIn.type === 'cooked_copra'
+                                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                                            : weighIn.type === 'uncooked_copra'
+                                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'
+                                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200',
+                                },
+                                {
+                                    label: weighIn.status,
+                                    className:
+                                        weighIn.status === 'paid'
+                                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                                            : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+                                },
+                            ]}
+                        >
+                            <MobileRecordRow
+                                label="Date"
+                                value={new Date(weighIn.weighed_at).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                })}
+                            />
+                            <MobileRecordRow
+                                label="Weight/Count"
+                                value={weighIn.type === 'coconut' ? `${weighIn.count || 0} pcs` : `${weighIn.weight_kg || 0} kg`}
+                            />
+                            <MobileRecordRow label="Unit Price" value={formatCurrency(weighIn.unit_price)} />
+                            <MobileRecordRow label="Notes" value={weighIn.notes || '-'} />
+                        </MobileRecordCard>
+                    ))}
+                    {weighIns.data.length === 0 && (
+                        <div className="rounded-lg border p-8 text-center text-gray-500 dark:text-gray-400">
+                            No weigh-ins found.
+                        </div>
+                    )}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
@@ -342,20 +482,40 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between">
-                    <RowsPerPageSelector
-                        value={parseInt(perPage, 10)}
-                        onChange={handlePerPageChange}
-                        options={PER_PAGE_OPTIONS}
-                    />
+                <div className="hidden md:block">
                     <Pagination
                         currentPage={weighIns.current_page}
-                        totalPages={weighIns.last_page}
+                        lastPage={weighIns.last_page}
+                        total={weighIns.total}
+                        perPage={weighIns.per_page}
                         onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
+                    />
+                </div>
+
+                <div className="md:hidden">
+                    <Pagination
+                        currentPage={weighIns.current_page}
+                        lastPage={weighIns.last_page}
+                        total={weighIns.total}
+                        perPage={weighIns.per_page}
+                        onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
                     />
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

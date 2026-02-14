@@ -38,8 +38,6 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    BarChart,
-    Bar,
     PieChart as RechartsPieChart,
     Pie,
     Cell,
@@ -150,23 +148,29 @@ interface DashboardData {
     sales: {
         today: {
             gross_sales: number;
-            net_sales: number;
+            total_cost: number;
+            gross_profit: number;
+            net_sales?: number;
         };
         this_week: {
             gross_sales: number;
-            net_sales: number;
+            total_cost: number;
+            gross_profit: number;
+            net_sales?: number;
         };
         this_month: {
             gross_sales: number;
-            net_sales: number;
+            total_cost: number;
+            gross_profit: number;
+            net_sales?: number;
         };
         by_status: {
-            OPEN: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
-            PARTIAL: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
-            COMPLETED: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
-            PARTIALLY_REFUNDED: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
-            REFUNDED: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
-            VOIDED: { count: number; gross_sales: number; total_refunded: number; net_sales: number };
+            OPEN: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
+            PARTIAL: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
+            COMPLETED: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
+            PARTIALLY_REFUNDED: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
+            REFUNDED: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
+            VOIDED: { count: number; gross_sales: number; total_cost: number; gross_profit: number; total_refunded: number; net_sales?: number };
         };
     };
     payments: {
@@ -216,7 +220,10 @@ interface DashboardData {
         low_stock_items: ProductVariant[];
         fast_moving_items: ProductVariant[];
         inventory_value: number;
+        hardware_inventory_value?: number;
+        agricultural_inventory_value?: number;
         potential_profit: number;
+        potential_profit_basis?: 'hardware_only' | string;
     };
     weigh_ins: {
         today: {
@@ -339,9 +346,6 @@ function AlertIcon({ type }: { type: string }) {
     }
 }
 
-const CHART_COLORS = ['#22c55e', '#eab308', '#ef4444'];
-const PIE_COLORS = ['#22c55e', '#f59e0b', '#94a3b8'];
-
 export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(false);
@@ -375,17 +379,21 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
         count: item.count,
     })) || [];
 
-    const weighInChartData = dashboard.charts?.daily_weigh_ins?.map(item => ({
-        date: format(parseISO(item.date), 'MMM d'),
-        amount: item.total_amount,
-        count: item.count,
-    })) || [];
-
     const paymentPieData = dashboard.charts?.payment_collection ? [
         { name: 'Fully Paid', value: dashboard.charts.payment_collection.fully_paid, color: '#22c55e' },
         { name: 'Partially Paid', value: dashboard.charts.payment_collection.partially_paid, color: '#f59e0b' },
         { name: 'Unpaid', value: dashboard.charts.payment_collection.unpaid, color: '#94a3b8' },
     ].filter(item => item.value > 0) : [];
+
+    const hardwareInventoryValue = dashboard.inventory.hardware_inventory_value ?? dashboard.inventory.inventory_value;
+    const agriculturalInventoryValue = dashboard.inventory.agricultural_inventory_value ?? 0;
+    const totalInventoryValue = hardwareInventoryValue + agriculturalInventoryValue;
+    const effectiveInventoryValue = totalInventoryValue > 0 ? totalInventoryValue : dashboard.inventory.inventory_value;
+    const hardwareCostBasis = hardwareInventoryValue - dashboard.inventory.potential_profit;
+    const hardwareMarginPercent =
+        hardwareCostBasis > 0 && dashboard.inventory.potential_profit > 0
+            ? (dashboard.inventory.potential_profit / hardwareCostBasis) * 100
+            : null;
 
     const formatWeighInType = (type: string) => {
         switch (type) {
@@ -604,39 +612,39 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                         </Button>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('sales')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('sales')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
+                                <CardTitle className="text-sm font-medium">Today's Gross Revenue</CardTitle>
                                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.sales.today.net_sales)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.sales.today.gross_sales)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    Gross: {formatCurrency(dashboard.sales.today.gross_sales)}
+                                    Gross Profit: {formatCurrency(dashboard.sales.today.gross_profit)}
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('sales')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('sales')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Week</CardTitle>
                                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.sales.this_week.net_sales)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.sales.this_week.gross_sales)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    Gross: {formatCurrency(dashboard.sales.this_week.gross_sales)}
+                                    Gross Profit: {formatCurrency(dashboard.sales.this_week.gross_profit)}
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('sales')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('sales')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Month</CardTitle>
                                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.sales.this_month.net_sales)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.sales.this_month.gross_sales)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    Gross: {formatCurrency(dashboard.sales.this_month.gross_sales)}
+                                    Gross Profit: {formatCurrency(dashboard.sales.this_month.gross_profit)}
                                 </p>
                             </CardContent>
                         </Card>
@@ -659,9 +667,9 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                         <div className="flex items-center justify-between mb-2">
                                             <StatusBadge status={status} />
                                         </div>
-                                        <div className="text-2xl font-bold">{data.count}</div>
+                                        <div className="hidden text-2xl font-bold md:block">{data.count}</div>
                                         <div className="text-xs text-muted-foreground mt-1">
-                                            Net: {formatCurrency(data.net_sales)}
+                                            Profit: {formatCurrency(data.gross_profit)}
                                         </div>
                                     </div>
                                 ))}
@@ -766,37 +774,37 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                         </Button>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('payments')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('payments')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">Today's Payments</CardTitle>
-                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <CreditCard className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.payments.today.total_payments)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.payments.today.total_payments)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     Outstanding: {formatCurrency(dashboard.payments.today.outstanding_balances)}
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('payments')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('payments')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Week</CardTitle>
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                <TrendingUp className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.payments.this_week.total_payments)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.payments.this_week.total_payments)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     Outstanding: {formatCurrency(dashboard.payments.this_week.outstanding_balances)}
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('payments')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('payments')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Month</CardTitle>
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                <TrendingUp className="h-4 w-4 text-violet-600 dark:text-violet-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.payments.this_month.total_payments)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.payments.this_month.total_payments)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     Outstanding: {formatCurrency(dashboard.payments.this_month.outstanding_balances)}
                                 </p>
@@ -898,37 +906,37 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                         </Button>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('weigh-ins')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('weigh-ins')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">Today's Weigh-Ins</CardTitle>
-                                <Scale className="h-4 w-4 text-muted-foreground" />
+                                <Scale className="h-4 w-4 text-orange-600 dark:text-orange-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.weigh_ins.today.total_amount)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.weigh_ins.today.total_amount)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     {dashboard.weigh_ins.today.count} weigh-ins
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('weigh-ins')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('weigh-ins')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Week</CardTitle>
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                <TrendingUp className="h-4 w-4 text-teal-600 dark:text-teal-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.weigh_ins.this_week.total_amount)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.weigh_ins.this_week.total_amount)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     {dashboard.weigh_ins.this_week.count} weigh-ins
                                 </p>
                             </CardContent>
                         </Card>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewReport('weigh-ins')}>
+                        <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => handleViewReport('weigh-ins')}>
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium">This Month</CardTitle>
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-300" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{formatCurrency(dashboard.weigh_ins.this_month.total_amount)}</div>
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(dashboard.weigh_ins.this_month.total_amount)}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     {dashboard.weigh_ins.this_month.count} weigh-ins
                                 </p>
@@ -951,7 +959,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                             Cooked Copra
                                         </span>
                                     </div>
-                                    <div className="text-2xl font-bold">{dashboard.weigh_ins.this_month.by_type.cooked_copra.count}</div>
+                                    <div className="hidden text-2xl font-bold md:block">{dashboard.weigh_ins.this_month.by_type.cooked_copra.count}</div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {Number(dashboard.weigh_ins.this_month.by_type.cooked_copra.total_weight_kg || 0).toFixed(2)} kg • {formatCurrency(dashboard.weigh_ins.this_month.by_type.cooked_copra.total_amount)}
                                     </div>
@@ -965,7 +973,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                             Uncooked Copra
                                         </span>
                                     </div>
-                                    <div className="text-2xl font-bold">{dashboard.weigh_ins.this_month.by_type.uncooked_copra.count}</div>
+                                    <div className="hidden text-2xl font-bold md:block">{dashboard.weigh_ins.this_month.by_type.uncooked_copra.count}</div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {Number(dashboard.weigh_ins.this_month.by_type.uncooked_copra.total_weight_kg || 0).toFixed(2)} kg • {formatCurrency(dashboard.weigh_ins.this_month.by_type.uncooked_copra.total_amount)}
                                     </div>
@@ -979,7 +987,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                             Coconut
                                         </span>
                                     </div>
-                                    <div className="text-2xl font-bold">{dashboard.weigh_ins.this_month.by_type.coconut.count}</div>
+                                    <div className="hidden text-2xl font-bold md:block">{dashboard.weigh_ins.this_month.by_type.coconut.count}</div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {dashboard.weigh_ins.this_month.by_type.coconut.total_count} pcs • {formatCurrency(dashboard.weigh_ins.this_month.by_type.coconut.total_amount)}
                                     </div>
@@ -1003,7 +1011,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                             Paid
                                         </span>
                                     </div>
-                                    <div className="text-2xl font-bold">{dashboard.weigh_ins.this_month.by_status.paid.count}</div>
+                                    <div className="hidden text-2xl font-bold md:block">{dashboard.weigh_ins.this_month.by_status.paid.count}</div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {formatCurrency(dashboard.weigh_ins.this_month.by_status.paid.total_amount)}
                                     </div>
@@ -1017,7 +1025,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                             Unpaid
                                         </span>
                                     </div>
-                                    <div className="text-2xl font-bold">{dashboard.weigh_ins.this_month.by_status.unpaid.count}</div>
+                                    <div className="hidden text-2xl font-bold md:block">{dashboard.weigh_ins.this_month.by_status.unpaid.count}</div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {formatCurrency(dashboard.weigh_ins.this_month.by_status.unpaid.total_amount)}
                                     </div>
@@ -1047,14 +1055,14 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                             <CardHeader>
                                 <CardTitle className="text-lg">Low Stock Items</CardTitle>
                                 <CardDescription>
-                                    {dashboard.inventory.low_stock_items.length} variant{dashboard.inventory.low_stock_items.length !== 1 ? 's' : ''} with quantity ≤ 5
+                                    {dashboard.inventory.low_stock_items.length} variant{dashboard.inventory.low_stock_items.length !== 1 ? 's' : ''} with quantity {'<='} 5
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
                                 {dashboard.inventory.low_stock_items.length > 0 ? (
                                     <div className="flex items-center justify-center py-6">
-                                        <Button 
-                                            variant="outline" 
+                                        <Button
+                                            variant="outline"
                                             className="w-full"
                                             onClick={() => router.visit('/inventory?filter=low_stock')}
                                         >
@@ -1062,7 +1070,7 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                         </Button>
                                     </div>
                                 ) : (
-                                    <p className="text-sm text-muted-foreground text-center py-4">✓ All variants well stocked</p>
+                                    <p className="text-sm text-muted-foreground text-center py-4">All variants well stocked</p>
                                 )}
                             </CardContent>
                         </Card>
@@ -1075,12 +1083,12 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                                 {dashboard.inventory.fast_moving_items && dashboard.inventory.fast_moving_items.length > 0 ? (
                                     <div className="space-y-2">
                                         {dashboard.inventory.fast_moving_items.slice(0, 5).map((item) => (
-                                            <div key={item.id} className="flex items-center justify-between p-2 rounded border">
+                                            <div key={item.id} className="flex items-center justify-between rounded border border-emerald-200/70 bg-white/70 p-2 dark:border-emerald-900/50 dark:bg-slate-950/40">
                                                 <div className="min-w-0 flex-1">
                                                     <div className="font-medium truncate">{item.product.name}</div>
                                                     <div className="text-xs text-muted-foreground truncate">{item.description}</div>
                                                 </div>
-                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 ml-2">
+                                                <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-200">
                                                     {item.total_sold ?? 0} sold
                                                 </span>
                                             </div>
@@ -1093,23 +1101,37 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
                         </Card>
                         <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg">Inventory Value</CardTitle>
-                                <CardDescription>Total value on hand</CardDescription>
+                                <CardTitle className="text-lg">Inventory Value Split</CardTitle>
+                                <CardDescription>Current value by category</CardDescription>
                             </CardHeader>
-                            <CardContent>
-                                <div className="text-3xl font-bold">{formatCurrency(dashboard.inventory.inventory_value)}</div>
+                            <CardContent className="space-y-3">
+                                <div className="hidden text-2xl font-bold md:block">{formatCurrency(effectiveInventoryValue)}</div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between rounded border border-blue-200/70 bg-white/80 px-2 py-1.5 dark:border-blue-900/50 dark:bg-slate-950/40">
+                                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Hardware</span>
+                                        <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">{formatCurrency(hardwareInventoryValue)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between rounded border border-emerald-200/70 bg-white/80 px-2 py-1.5 dark:border-emerald-900/50 dark:bg-slate-950/40">
+                                        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Agricultural</span>
+                                        <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{formatCurrency(agriculturalInventoryValue)}</span>
+                                    </div>
+                                </div>
                             </CardContent>
                         </Card>
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-lg">Potential Profit</CardTitle>
-                                <CardDescription>If all inventory sold</CardDescription>
+                                <CardDescription>
+                                    {dashboard.inventory.potential_profit_basis === 'hardware_only'
+                                        ? 'Hardware inventory only'
+                                        : 'If all inventory sold'}
+                                </CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{formatCurrency(dashboard.inventory.potential_profit)}</div>
-                                {dashboard.inventory.inventory_value > 0 && dashboard.inventory.potential_profit > 0 && (
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        {((dashboard.inventory.potential_profit / (dashboard.inventory.inventory_value - dashboard.inventory.potential_profit)) * 100).toFixed(1)}% margin
+                                <div className="text-3xl font-bold text-green-700 dark:text-green-400">{formatCurrency(dashboard.inventory.potential_profit)}</div>
+                                {hardwareMarginPercent !== null && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {hardwareMarginPercent.toFixed(1)}% hardware margin
                                     </p>
                                 )}
                             </CardContent>
@@ -1262,3 +1284,4 @@ export default function DashboardIndex({ dashboard }: DashboardIndexProps) {
         </AppLayout>
     );
 }
+

@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
@@ -20,6 +22,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::define('can_receive_stock', function (User $user): bool {
+            return $user->isAdmin();
+        });
+
+        Gate::define('can_produce', function (User $user): bool {
+            return $user->isAdmin();
+        });
+
+        Gate::define('can_adjust_stock', function (User $user): bool {
+            return $user->isAdmin();
+        });
+
         // Force HTTPS URLs ONLY in production
         // In development, explicitly use HTTP
         if (config('app.env') === 'production') {

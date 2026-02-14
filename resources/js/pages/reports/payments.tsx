@@ -9,6 +9,8 @@ import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { formatCurrency } from '@/lib/format-currency';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MobileRecordCard, MobileRecordRow } from '@/components/mobile/record-card';
+import { FilterSheetButton } from '@/components/mobile/filter-sheet-button';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -115,19 +117,106 @@ export default function PaymentsReport({ payments, filters }: PaymentsReportProp
 
     const isRefund = (payment: Payment) => payment.amount < 0;
 
+    const hasActiveFilters =
+        Boolean(dateFrom)
+        || Boolean(dateTo)
+        || paymentMethod !== 'all'
+        || status !== 'all'
+        || type !== 'all';
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Payments Report" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Payments Report</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Payments Report</h1>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Complete payment history including refunds
                     </p>
                 </div>
 
                 {/* Filters */}
-                <div className="grid gap-4 md:grid-cols-5">
+                <div className="flex justify-end md:hidden">
+                    <FilterSheetButton title="Payment Filters" isActive={hasActiveFilters}>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date From</label>
+                            <Input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Date To</label>
+                            <Input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Payment Method</label>
+                            <Select
+                                value={paymentMethod}
+                                onValueChange={(value) => {
+                                    setPaymentMethod(value);
+                                    triggerFetch({ payment_method: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Methods" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Methods</SelectItem>
+                                    <SelectItem value="cash">Cash</SelectItem>
+                                    <SelectItem value="card">Card</SelectItem>
+                                    <SelectItem value="check">Check</SelectItem>
+                                    <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Type</label>
+                            <Select
+                                value={type}
+                                onValueChange={(value) => {
+                                    setType(value);
+                                    triggerFetch({ type: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Types" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Types</SelectItem>
+                                    <SelectItem value="payment">Payments</SelectItem>
+                                    <SelectItem value="refund">Refunds</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium mb-1 block">Status</label>
+                            <Select
+                                value={status}
+                                onValueChange={(value) => {
+                                    setStatus(value);
+                                    triggerFetch({ status: value, page: 1 });
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    <SelectItem value="completed">Completed</SelectItem>
+                                    <SelectItem value="pending">Pending</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </FilterSheetButton>
+                </div>
+
+                <div className="hidden gap-4 md:grid md:grid-cols-5">
                     <div>
                         <label className="text-sm font-medium mb-1 block">Date From</label>
                         <Input
@@ -209,7 +298,7 @@ export default function PaymentsReport({ payments, filters }: PaymentsReportProp
                 <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-lg border p-4">
                         <div className="text-sm font-medium text-muted-foreground">Total Payments</div>
-                        <div className="text-2xl font-bold">
+                        <div className="hidden text-2xl font-bold md:block">
                             {formatCurrency(
                                 payments.data
                                     .filter(p => !isRefund(p))
@@ -230,7 +319,34 @@ export default function PaymentsReport({ payments, filters }: PaymentsReportProp
                 </div>
 
                 {/* Table */}
-                <div className="rounded-lg border">
+                <div className="space-y-3 md:hidden">
+                    {payments.data.map((payment) => (
+                        <MobileRecordCard
+                            key={payment.id}
+                            title={payment.sale.sale_number}
+                            subtitle={payment.received_by.name}
+                            value={`${isRefund(payment) ? '-' : ''}${formatCurrency(Math.abs(payment.amount))}`}
+                            badges={[
+                                isRefund(payment)
+                                    ? { label: 'Refund', className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' }
+                                    : { label: 'Payment', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' },
+                            ]}
+                        >
+                            <MobileRecordRow
+                                label="Date"
+                                value={new Date(payment.received_at).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                })}
+                            />
+                            <MobileRecordRow label="Method" value={payment.payment_method} />
+                            <MobileRecordRow label="Notes" value={payment.notes || '-'} />
+                        </MobileRecordCard>
+                    ))}
+                </div>
+
+                <div className="hidden rounded-lg border md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
@@ -278,20 +394,40 @@ export default function PaymentsReport({ payments, filters }: PaymentsReportProp
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between">
-                    <RowsPerPageSelector
-                        value={parseInt(perPage, 10)}
-                        onChange={handlePerPageChange}
-                        options={PER_PAGE_OPTIONS}
-                    />
+                <div className="hidden md:block">
                     <Pagination
                         currentPage={payments.current_page}
-                        totalPages={payments.last_page}
+                        lastPage={payments.last_page}
+                        total={payments.total}
+                        perPage={payments.per_page}
                         onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
+                    />
+                </div>
+
+                <div className="md:hidden">
+                    <Pagination
+                        currentPage={payments.current_page}
+                        lastPage={payments.last_page}
+                        total={payments.total}
+                        perPage={payments.per_page}
+                        onPageChange={handlePageChange}
+                        pageSizeSelector={
+                            <RowsPerPageSelector
+                                perPage={perPage}
+                                onPerPageChange={(value) => handlePerPageChange(parseInt(value, 10))}
+                            />
+                        }
                     />
                 </div>
             </div>
         </AppLayout>
     );
 }
+
 

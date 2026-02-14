@@ -11,6 +11,8 @@ class Sale extends Model
 {
     protected $fillable = [
         'sale_number',
+        'sale_date',
+        'customer_name',
         'status',
         'payment_status',
         'is_for_delivery',
@@ -28,11 +30,39 @@ class Sale extends Model
     ];
 
     protected $casts = [
+        'sale_date' => 'date',
         'subtotal' => 'decimal:2',
         'total' => 'decimal:2',
         'is_for_delivery' => 'boolean',
         'voided_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(function (Sale $sale) {
+            if (!$sale->is_for_delivery) {
+                return;
+            }
+
+            if (
+                !$sale->wasRecentlyCreated &&
+                !$sale->wasChanged('delivery_status') &&
+                !$sale->wasChanged('status')
+            ) {
+                return;
+            }
+
+            $sale->load('items.productVariant');
+
+            $sale->items
+                ->pluck('productVariant')
+                ->filter()
+                ->unique('id')
+                ->each(function ($variant) {
+                    $variant->applyPendingUnitPriceIfEligible();
+                });
+        });
+    }
 
     /**
      * Relationship: Sale belongs to a User (cashier)

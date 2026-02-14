@@ -107,7 +107,7 @@ export default function DeliveriesCreate({ sales, users, products, preselectedSa
             <Head title="Create Delivery" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold">Create Delivery</h1>
+                    <h1 className="hidden text-2xl font-bold md:block">Create Delivery</h1>
                 </div>
 
                 <div className="max-w-4xl">
@@ -274,4 +274,5 @@ export default function DeliveriesCreate({ sales, users, products, preselectedSa
         </AppLayout>
     );
 }
+
 
