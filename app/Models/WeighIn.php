@@ -49,8 +49,8 @@ class WeighIn extends Model
                 $weighIn->weight_kg = null;
             }
             
-            // Set count to null for copra types (they use weight_kg instead)
-            if (in_array($weighIn->type, ['cooked_copra', 'uncooked_copra'])) {
+            // Set count to null for all non-coconut types (they use weight_kg instead)
+            if ($weighIn->type !== 'coconut') {
                 $weighIn->count = null;
             }
 
@@ -63,10 +63,10 @@ class WeighIn extends Model
             }
 
             // Auto-calculate total_amount
-            if (in_array($weighIn->type, ['cooked_copra', 'uncooked_copra']) && $weighIn->weight_kg && $weighIn->unit_price) {
-                $weighIn->total_amount = $weighIn->weight_kg * $weighIn->unit_price;
-            } elseif ($weighIn->type === 'coconut' && $weighIn->count && $weighIn->unit_price) {
+            if ($weighIn->type === 'coconut' && $weighIn->count && $weighIn->unit_price) {
                 $weighIn->total_amount = $weighIn->count * $weighIn->unit_price;
+            } elseif ($weighIn->weight_kg && $weighIn->unit_price) {
+                $weighIn->total_amount = $weighIn->weight_kg * $weighIn->unit_price;
             }
         });
 

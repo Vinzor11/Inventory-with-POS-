@@ -13,7 +13,7 @@ class WeighInInventoryService
      * Map weigh-in type to product variant
      * Returns the ProductVariant ID for the given weigh-in type
      * 
-     * @param string $weighInType 'cooked_copra', 'uncooked_copra', or 'coconut'
+     * @param string $weighInType 'cooked_copra', 'uncooked_copra', 'coconut', or 'bagol'
      * @return ProductVariant|null
      */
     public static function getProductVariantForType(string $weighInType): ?ProductVariant
@@ -22,6 +22,7 @@ class WeighInInventoryService
             'cooked_copra' => 'Cooked Copra',
             'uncooked_copra' => 'Uncooked Copra',
             'coconut' => 'Coconut',
+            'bagol' => 'Bagol',
         ];
 
         if (!isset($productNames[$weighInType])) {

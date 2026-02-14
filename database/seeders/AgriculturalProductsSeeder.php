@@ -12,7 +12,7 @@ class AgriculturalProductsSeeder extends Seeder
 {
     /**
      * Run the database seeds.
-     * Creates Agricultural Products category and product variants for copra/coconut
+     * Creates Agricultural Products category and product variants for copra/coconut/bagol
      * These products are excluded from POS but track inventory via weigh-ins
      */
     public function run(): void
@@ -21,7 +21,7 @@ class AgriculturalProductsSeeder extends Seeder
         $agriculturalCategory = ProductCategory::firstOrCreate(
             ['name' => 'Agricultural Products'],
             [
-                'description' => 'Agricultural products (copra, coconut) - excluded from POS',
+                'description' => 'Agricultural products (copra, coconut, bagol) - excluded from POS',
                 'is_active' => true,
             ]
         );
@@ -65,6 +65,34 @@ class AgriculturalProductsSeeder extends Seeder
             ]
         );
 
+        // Create Bagol Product
+        $bagolImagePath = null;
+        if (file_exists(public_path('bagol.jpg'))) {
+            $bagolImagePath = '/bagol.jpg';
+        } elseif (file_exists(public_path('bagol.jpeg'))) {
+            $bagolImagePath = '/bagol.jpeg';
+        } elseif (file_exists(public_path('bagol.png'))) {
+            $bagolImagePath = '/bagol.png';
+        } elseif (file_exists(storage_path('app/public/products/bagol.jpg'))) {
+            $bagolImagePath = 'products/bagol.jpg';
+        }
+
+        $bagolProduct = Product::firstOrCreate(
+            ['sku' => 'BAGOL'],
+            [
+                'category_id' => $agriculturalCategory->id,
+                'name' => 'Bagol',
+                'brand' => null,
+                'base_unit' => 'kg',
+                'track_stock' => true,
+                'is_active' => true,
+                'image' => $bagolImagePath,
+            ]
+        );
+        if ($bagolImagePath && $bagolProduct->image !== $bagolImagePath) {
+            $bagolProduct->update(['image' => $bagolImagePath]);
+        }
+
         // Create Product Variants (one variant per product for simplicity)
         $cookedCopraVariant = ProductVariant::firstOrCreate(
             [
@@ -99,6 +127,17 @@ class AgriculturalProductsSeeder extends Seeder
             ]
         );
 
+        $bagolVariant = ProductVariant::firstOrCreate(
+            [
+                'product_id' => $bagolProduct->id,
+                'description' => 'Bagol',
+            ],
+            [
+                'unit_price' => 0, // Will be updated from weigh-in prices
+                'purchase_price' => null,
+            ]
+        );
+
         // Initialize inventory for variants (start at 0)
         Inventory::firstOrCreate(
             ['product_variant_id' => $cookedCopraVariant->id],
@@ -112,6 +151,11 @@ class AgriculturalProductsSeeder extends Seeder
 
         Inventory::firstOrCreate(
             ['product_variant_id' => $coconutVariant->id],
+            ['quantity_on_hand' => 0]
+        );
+
+        Inventory::firstOrCreate(
+            ['product_variant_id' => $bagolVariant->id],
             ['quantity_on_hand' => 0]
         );
     }

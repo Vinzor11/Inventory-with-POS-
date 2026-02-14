@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreWeighInRequest;
+use App\Models\Product;
 use App\Models\WeighIn;
 use App\Models\WeighInTransaction;
 use App\Models\WeighInPrice;
@@ -59,22 +60,22 @@ class WeighInsController extends Controller
             ->get();
 
         $users = \App\Models\User::orderBy('name')->get();
-        
-        // Get current prices for all types
-        $cookedCopraPrice = WeighInPrice::getPriceForType('cooked_copra');
-        $uncookedCopraPrice = WeighInPrice::getPriceForType('uncooked_copra');
-        $coconutPrice = WeighInPrice::getPriceForType('coconut');
+
+        $storedPrices = WeighInPrice::query()
+            ->get()
+            ->mapWithKeys(function ($row) {
+                return [$row->type => $row->price !== null ? (float) $row->price : 0.0];
+            })
+            ->toArray();
+
+        $prices = $this->buildPriceMapWithAgriTypes($storedPrices);
 
         return Inertia::render('weigh-ins/index', [
             'transactions' => $transactions,
             'standaloneWeighIns' => $standaloneWeighIns,
             'filters' => $request->only(['search', 'per_page', 'type']),
             'users' => $users,
-            'prices' => [
-                'cooked_copra' => $cookedCopraPrice,
-                'uncooked_copra' => $uncookedCopraPrice,
-                'coconut' => $coconutPrice,
-            ],
+            'prices' => $prices,
         ]);
     }
 
@@ -84,19 +85,19 @@ class WeighInsController extends Controller
     public function create(): Response
     {
         $users = \App\Models\User::orderBy('name')->get();
-        
-        // Get current prices for all types
-        $cookedCopraPrice = WeighInPrice::getPriceForType('cooked_copra');
-        $uncookedCopraPrice = WeighInPrice::getPriceForType('uncooked_copra');
-        $coconutPrice = WeighInPrice::getPriceForType('coconut');
+
+        $storedPrices = WeighInPrice::query()
+            ->get()
+            ->mapWithKeys(function ($row) {
+                return [$row->type => $row->price !== null ? (float) $row->price : 0.0];
+            })
+            ->toArray();
+
+        $prices = $this->buildPriceMapWithAgriTypes($storedPrices);
 
         return Inertia::render('weigh-ins/create', [
             'users' => $users,
-            'prices' => [
-                'cooked_copra' => $cookedCopraPrice,
-                'uncooked_copra' => $uncookedCopraPrice,
-                'coconut' => $coconutPrice,
-            ],
+            'prices' => $prices,
         ]);
     }
 
@@ -199,6 +200,94 @@ class WeighInsController extends Controller
                 ->withErrors(['error' => 'Failed to create weigh-in transaction: ' . $e->getMessage()])
                 ->withInput();
         }
+    }
+
+    /**
+     * @param array<string, float|null> $storedPrices
+     * @return array<string, float|null>
+     */
+    private function buildPriceMapWithAgriTypes(array $storedPrices): array
+    {
+        $typeKeys = array_values(array_unique(array_merge(
+            array_keys($storedPrices),
+            $this->getAgriTypeKeys()
+        )));
+        $typeKeys = $this->sortTypeKeys($typeKeys);
+
+        $prices = [];
+        foreach ($typeKeys as $type) {
+            $prices[$type] = $storedPrices[$type] ?? 0.0;
+        }
+
+        return $prices;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getAgriTypeKeys(): array
+    {
+        return Product::query()
+            ->whereHas('category', function ($query) {
+                $query->where('name', 'Agricultural Products');
+            })
+            ->get(['name', 'sku'])
+            ->map(function (Product $product) {
+                return $this->inferTypeKeyFromProduct($product);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function inferTypeKeyFromProduct(Product $product): ?string
+    {
+        $sku = trim((string) $product->sku);
+        if ($sku !== '') {
+            return strtolower(str_replace('-', '_', $sku));
+        }
+
+        $name = trim((string) $product->name);
+        if ($name === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', '_', $name), '_'));
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @param array<int, string> $typeKeys
+     * @return array<int, string>
+     */
+    private function sortTypeKeys(array $typeKeys): array
+    {
+        $knownOrder = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
+
+        usort($typeKeys, function (string $a, string $b) use ($knownOrder) {
+            $aIndex = array_search($a, $knownOrder, true);
+            $bIndex = array_search($b, $knownOrder, true);
+
+            $aKnown = $aIndex !== false;
+            $bKnown = $bIndex !== false;
+
+            if ($aKnown && $bKnown) {
+                return $aIndex <=> $bIndex;
+            }
+
+            if ($aKnown) {
+                return -1;
+            }
+
+            if ($bKnown) {
+                return 1;
+            }
+
+            return strcmp($a, $b);
+        });
+
+        return $typeKeys;
     }
 
     /**

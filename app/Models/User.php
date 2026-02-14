@@ -76,7 +76,17 @@ class User extends Authenticatable
      */
     public function hasRole(string $role): bool
     {
-        return $this->role === $role;
+        $normalizedRequestedRole = $this->normalizeRole($role);
+
+        if ($normalizedRequestedRole === 'admin') {
+            return $this->isAdmin();
+        }
+
+        if ($normalizedRequestedRole === 'staff') {
+            return $this->isStaff();
+        }
+
+        return $this->normalizeRole($this->role) === $normalizedRequestedRole;
     }
 
     /**
@@ -84,7 +94,11 @@ class User extends Authenticatable
      */
     public function isAdmin(): bool
     {
-        return $this->hasRole('admin');
+        return in_array(
+            $this->normalizeRole($this->role),
+            ['admin', 'administrator', 'owner', 'manager'],
+            true
+        );
     }
 
     /**
@@ -92,7 +106,11 @@ class User extends Authenticatable
      */
     public function isStaff(): bool
     {
-        return $this->hasRole('staff');
+        return in_array(
+            $this->normalizeRole($this->role),
+            ['staff', 'cashier', 'employee'],
+            true
+        );
     }
 
     /**
@@ -130,5 +148,15 @@ class User extends Authenticatable
 
                 return !empty($pinHash) && Hash::check($normalizedPin, $pinHash);
             });
+    }
+
+    private function normalizeRole(?string $role): ?string
+    {
+        if ($role === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim($role));
+        return $normalized !== '' ? $normalized : null;
     }
 }

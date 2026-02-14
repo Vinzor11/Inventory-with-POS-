@@ -1,15 +1,13 @@
 import { Head } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { router } from '@inertiajs/react';
 import { formatCurrency } from '@/lib/format-currency';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Weigh-Ins', href: '/weigh-ins' }, { title: 'Details', href: '#' }];
 
 interface WeighIn {
     id: number;
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: 'cooked_copra' | 'uncooked_copra' | 'coconut' | 'bagol';
     weight_kg: number | null;
     count: number | null;
     unit_price: number;
@@ -38,7 +36,7 @@ export default function WeighInsShow({ weighIn }: WeighInsShowProps) {
                             <div>
                                 <strong>Type:</strong> <span className="capitalize">{weighIn.type.replace('_', ' ')}</span>
                             </div>
-                            {(weighIn.type === 'cooked_copra' || weighIn.type === 'uncooked_copra') ? (
+                            {weighIn.type !== 'coconut' ? (
                                 <div>
                                     <strong>Weight:</strong> {weighIn.weight_kg} kg
                                 </div>
@@ -48,10 +46,10 @@ export default function WeighInsShow({ weighIn }: WeighInsShowProps) {
                                 </div>
                             )}
                             <div>
-                                <strong>Unit Price:</strong> ₱{formatCurrency(weighIn.unit_price)} {(weighIn.type === 'cooked_copra' || weighIn.type === 'uncooked_copra') ? 'per kg' : 'per piece'}
+                                <strong>Unit Price:</strong> PHP {formatCurrency(weighIn.unit_price)} {weighIn.type !== 'coconut' ? 'per kg' : 'per piece'}
                             </div>
                             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
-                                <strong>Total Amount:</strong> <span className="text-2xl font-bold ml-2">₱{formatCurrency(weighIn.total_amount)}</span>
+                                <strong>Total Amount:</strong> <span className="text-2xl font-bold ml-2">PHP {formatCurrency(weighIn.total_amount)}</span>
                             </div>
                             <div>
                                 <strong>Weighed By:</strong> {weighIn.weighed_by.name}
@@ -71,5 +69,3 @@ export default function WeighInsShow({ weighIn }: WeighInsShowProps) {
         </AppLayout>
     );
 }
-
-

@@ -638,6 +638,7 @@ class ReceiptPrintService
             'cooked_copra' => 'Cooked Copra',
             'uncooked_copra' => 'Uncooked Copra',
             'coconut' => 'Coconut',
+            'bagol' => 'Bagol',
             default => ucfirst(str_replace('_', ' ', $type)),
         };
     }

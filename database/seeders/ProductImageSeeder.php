@@ -42,6 +42,9 @@ class ProductImageSeeder extends Seeder
             'copra cooked.jpg' => 'COOKED-COPRA',
             'copra uncooked.jpg' => 'UNCOOKED-COPRA',
             'coconut.jpg' => 'COCONUT',
+            'bagol.jpg' => 'BAGOL',
+            'bagol.jpeg' => 'BAGOL',
+            'bagol.png' => 'BAGOL',
         ];
 
         $sourceFolder = base_path('J Trading');

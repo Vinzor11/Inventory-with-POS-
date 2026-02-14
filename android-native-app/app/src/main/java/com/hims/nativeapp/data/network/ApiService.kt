@@ -36,6 +36,7 @@ import com.hims.nativeapp.data.model.SalePayment
 import com.hims.nativeapp.data.model.SaleReceiptData
 import com.hims.nativeapp.data.model.SalesReportData
 import com.hims.nativeapp.data.model.StockInRequest
+import com.hims.nativeapp.data.model.User
 import com.hims.nativeapp.data.model.VoidSaleRequest
 import com.hims.nativeapp.data.model.WeighLandingData
 import com.hims.nativeapp.data.model.WeighBatchStoreRequest
@@ -52,6 +53,9 @@ import retrofit2.http.Query
 interface ApiService {
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): ApiEnvelope<LoginData>
+
+    @GET("api/auth/user")
+    suspend fun getAuthenticatedUser(): ApiEnvelope<User>
 
     @GET("api/pos/products")
     suspend fun getPosProducts(

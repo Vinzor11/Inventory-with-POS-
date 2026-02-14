@@ -189,11 +189,15 @@ class AuthController extends Controller
      */
     private function formatUser(User $user): array
     {
+        $normalizedRole = $user->isAdmin()
+            ? 'admin'
+            : ($user->isStaff() ? 'staff' : $user->role);
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
-            'role' => $user->role,
+            'role' => $normalizedRole,
             'is_active' => (bool) $user->is_active,
             'has_pin' => $user->has_pin,
             'email_verified_at' => $user->email_verified_at,

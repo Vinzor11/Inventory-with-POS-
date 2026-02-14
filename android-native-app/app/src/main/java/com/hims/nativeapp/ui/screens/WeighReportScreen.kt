@@ -314,6 +314,7 @@ private fun WeighReportFiltersDialog(
                             FilterOption("all", "All"),
                             FilterOption("cooked_copra", "Cooked"),
                             FilterOption("uncooked_copra", "Uncooked"),
+                            FilterOption("bagol", "Bagol"),
                             FilterOption("coconut", "Coconut"),
                         ),
                     selectedValue = draftType,

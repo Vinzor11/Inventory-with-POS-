@@ -723,6 +723,7 @@ private fun ManagePricesSheet(
 ) {
     var cookedInput by remember(prices) { mutableStateOf(formatCompactNumber(prices["cooked_copra"] ?: 0.0)) }
     var uncookedInput by remember(prices) { mutableStateOf(formatCompactNumber(prices["uncooked_copra"] ?: 0.0)) }
+    var bagolInput by remember(prices) { mutableStateOf(formatCompactNumber(prices["bagol"] ?: 0.0)) }
     var coconutInput by remember(prices) { mutableStateOf(formatCompactNumber(prices["coconut"] ?: 0.0)) }
     var localError by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -782,6 +783,15 @@ private fun ManagePricesSheet(
                         enabled = !isActionLoading,
                     )
                     PriceFieldRow(
+                        label = "Bagol (/kg)",
+                        value = bagolInput,
+                        onValueChange = {
+                            bagolInput = it
+                            localError = null
+                        },
+                        enabled = !isActionLoading,
+                    )
+                    PriceFieldRow(
                         label = "Coconut (/pc)",
                         value = coconutInput,
                         onValueChange = {
@@ -818,12 +828,13 @@ private fun ManagePricesSheet(
                             onClick = {
                                 val cooked = cookedInput.toDoubleOrNull()
                                 val uncooked = uncookedInput.toDoubleOrNull()
+                                val bagol = bagolInput.toDoubleOrNull()
                                 val coconut = coconutInput.toDoubleOrNull()
-                                if (cooked == null || uncooked == null || coconut == null) {
+                                if (cooked == null || uncooked == null || bagol == null || coconut == null) {
                                     localError = "All prices must be valid numbers."
                                     return@Button
                                 }
-                                if (cooked < 0.0 || uncooked < 0.0 || coconut < 0.0) {
+                                if (cooked < 0.0 || uncooked < 0.0 || bagol < 0.0 || coconut < 0.0) {
                                     localError = "Prices cannot be negative."
                                     return@Button
                                 }
@@ -832,6 +843,7 @@ private fun ManagePricesSheet(
                                     mapOf(
                                         "cooked_copra" to cooked,
                                         "uncooked_copra" to uncooked,
+                                        "bagol" to bagol,
                                         "coconut" to coconut,
                                     ),
                                 ) {
@@ -910,6 +922,7 @@ private fun prettyWeighType(type: String?): String {
         "cooked_copra" -> "Cooked Copra"
         "uncooked_copra" -> "Uncooked Copra"
         "coconut" -> "Coconut"
+        "bagol" -> "Bagol"
         else -> type.orEmpty().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
     }
 }

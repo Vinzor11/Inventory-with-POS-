@@ -80,8 +80,9 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
     var openWeighManagePricesKey by remember { mutableStateOf(0) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     val moreSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val isAdmin = state.userRole.equals("admin", ignoreCase = true)
-    val isStaff = state.userRole.equals("staff", ignoreCase = true)
+    val normalizedRole = state.userRole?.trim()?.lowercase()
+    val isAdmin = normalizedRole in setOf("admin", "administrator", "owner", "manager")
+    val isStaff = normalizedRole in setOf("staff", "cashier", "employee")
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let {
@@ -732,6 +733,7 @@ private fun buildWeighReceiptText(transaction: WeighInTransaction): String {
                 "cooked_copra" -> "Cooked Copra"
                 "uncooked_copra" -> "Uncooked Copra"
                 "coconut" -> "Coconut"
+                "bagol" -> "Bagol"
                 else -> item.type.orEmpty().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
             }
         val qtyLabel =

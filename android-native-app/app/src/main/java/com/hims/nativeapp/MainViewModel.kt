@@ -59,7 +59,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AppUiState(
             isAuthenticated = !sessionStore.getToken().isNullOrBlank(),
             userName = sessionStore.getUserName(),
-            userRole = sessionStore.getUserRole(),
+            userRole = canonicalizeRole(sessionStore.getUserRole()),
         ),
     )
         private set
@@ -179,13 +179,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uiState = uiState.copy(isLoading = true, errorMessage = null)
             try {
                 val response = api.login(LoginRequest(email = email, password = password))
-                sessionStore.saveSession(response.data.token, response.data.user.name, response.data.user.role)
+                val canonicalRole = canonicalizeRole(response.data.user.role)
+                sessionStore.saveSession(response.data.token, response.data.user.name, canonicalRole)
                 uiState =
                     uiState.copy(
                         isAuthenticated = true,
                         isLoading = false,
                         userName = response.data.user.name,
-                        userRole = response.data.user.role,
+                        userRole = canonicalRole,
                     )
                 refreshAll(initial = true)
             } catch (e: Exception) {
@@ -1756,7 +1757,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val normalizedType = type.trim().lowercase()
-        if (normalizedType !in setOf("cooked_copra", "uncooked_copra", "coconut")) {
+        if (normalizedType !in setOf("cooked_copra", "uncooked_copra", "coconut", "bagol")) {
             uiState = uiState.copy(errorMessage = "Invalid weigh-in type.")
             return
         }
@@ -1803,7 +1804,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val invalid = prices.any { (type, value) ->
-            type !in setOf("cooked_copra", "uncooked_copra", "coconut") || value < 0.0
+            type !in setOf("cooked_copra", "uncooked_copra", "coconut", "bagol") || value < 0.0
         }
         if (invalid) {
             uiState = uiState.copy(errorMessage = "Invalid weigh-in prices payload.")
@@ -1944,6 +1945,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     api.getDeliveries(
                         perPage = 200,
                     ).data.data
+                var userName = uiState.userName
+                var userRole = canonicalizeRole(uiState.userRole)
                 var inventoryDashboard = uiState.inventoryDashboard
                 var inventoryMovements = uiState.inventoryMovements
                 var weighIns = uiState.weighIns
@@ -1955,6 +1958,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var productionRuns = uiState.productionRuns
                 var cookedCopraStockSummary = uiState.cookedCopraStockSummary
                 val nonBlockingErrors = mutableListOf<String>()
+
+                try {
+                    val currentUser = api.getAuthenticatedUser().data
+                    userName = currentUser.name
+                    userRole = canonicalizeRole(currentUser.role)
+                    val token = sessionStore.getToken()
+                    if (!token.isNullOrBlank()) {
+                        sessionStore.saveSession(token, userName, userRole)
+                    }
+                } catch (e: Exception) {
+                    if (isUnauthorized(e)) {
+                        throw e
+                    }
+                    nonBlockingErrors.add("Profile sync failed. ${networkErrorMessage(e)}")
+                }
 
                 try {
                     productMenuItems = api.getProducts(perPage = 200).data.data
@@ -2049,6 +2067,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     uiState.copy(
                         isLoading = false,
                         isRefreshing = false,
+                        userName = userName,
+                        userRole = userRole,
                         products = products,
                         productMenuItems = productMenuItems,
                         inventoryVariants = inventoryVariants,
@@ -2243,6 +2263,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             uiState = uiState.copy(isRefreshing = true, errorMessage = null)
             try {
+                val currentUser = api.getAuthenticatedUser().data
+                val canonicalRole = canonicalizeRole(currentUser.role)
+                val token = sessionStore.getToken()
+                if (!token.isNullOrBlank()) {
+                    sessionStore.saveSession(token, currentUser.name, canonicalRole)
+                }
+                uiState =
+                    uiState.copy(
+                        userName = currentUser.name,
+                        userRole = canonicalRole,
+                    )
+
+                if (!isAdminRole(canonicalRole)) {
+                    uiState =
+                        uiState.copy(
+                            isRefreshing = false,
+                            dashboardData = null,
+                            errorMessage = "Dashboard is available to administrators only.",
+                        )
+                    return@launch
+                }
+
                 val dashboardData = api.getDashboard().data
                 var inventoryDashboard = uiState.inventoryDashboard
                 var nonBlockingError: String? = null
@@ -2494,11 +2536,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun isCurrentUserAdmin(): Boolean {
-        return uiState.userRole.equals("admin", ignoreCase = true)
+        return isAdminRole(uiState.userRole)
     }
 
     private fun isCurrentUserStaff(): Boolean {
-        return uiState.userRole.equals("staff", ignoreCase = true)
+        return isStaffRole(uiState.userRole)
+    }
+
+    private fun isAdminRole(role: String?): Boolean {
+        return canonicalizeRole(role) == "admin"
+    }
+
+    private fun isStaffRole(role: String?): Boolean {
+        return canonicalizeRole(role) == "staff"
+    }
+
+    private fun canonicalizeRole(role: String?): String? {
+        val normalized = role?.trim()?.lowercase().orEmpty()
+        if (normalized.isBlank()) {
+            return null
+        }
+
+        return when (normalized) {
+            "admin", "administrator", "owner", "manager" -> "admin"
+            "staff", "cashier", "employee" -> "staff"
+            else -> normalized
+        }
     }
 
     private fun prettyType(type: String): String {
@@ -2506,6 +2569,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "cooked_copra" -> "Cooked Copra"
             "uncooked_copra" -> "Uncooked Copra"
             "coconut" -> "Coconut"
+            "bagol" -> "Bagol"
             else -> type.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
         }
     }

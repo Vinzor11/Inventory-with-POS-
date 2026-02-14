@@ -43,7 +43,7 @@ interface User {
 interface WeighIn {
     id: number;
     ref_num: string;
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: 'cooked_copra' | 'uncooked_copra' | 'coconut' | 'bagol';
     weight_kg: number | null;
     count: number | null;
     unit_price: number;
@@ -76,11 +76,7 @@ interface WeighInsIndexProps {
     standaloneWeighIns: WeighIn[];
     filters: { search?: string; per_page?: number; type?: string };
     users?: User[];
-    prices?: {
-        cooked_copra: number | null;
-        uncooked_copra: number | null;
-        coconut: number | null;
-    };
+    prices?: Record<string, number | null>;
 }
 
 const STORAGE_KEY = 'weigh_ins_perPage';
@@ -96,7 +92,7 @@ export default function WeighInsIndex({
     standaloneWeighIns,
     filters,
     users = [],
-    prices = { cooked_copra: null, uncooked_copra: null, coconut: null },
+    prices = { cooked_copra: null, uncooked_copra: null, coconut: null, bagol: null },
 }: WeighInsIndexProps) {
     const { auth } = usePage<SharedData>().props;
     const isAdmin = auth.user?.role === 'admin';
@@ -441,12 +437,9 @@ export default function WeighInsIndex({
                                             <MobileRecordRow
                                                 label="Weight/Count"
                                                 value={
-                                                    weighIn.type ===
-                                                        'cooked_copra' ||
-                                                    weighIn.type ===
-                                                        'uncooked_copra'
-                                                        ? `${weighIn.weight_kg} kg`
-                                                        : `${weighIn.count} pieces`
+                                                    weighIn.type === 'coconut'
+                                                        ? `${weighIn.count} pieces`
+                                                        : `${weighIn.weight_kg} kg`
                                                 }
                                             />
                                             <MobileRecordRow
@@ -666,12 +659,9 @@ export default function WeighInsIndex({
                                                                                 )}
                                                                             </span>
                                                                             <div className="text-xs text-gray-500">
-                                                                                {weighIn.type ===
-                                                                                    'cooked_copra' ||
-                                                                                weighIn.type ===
-                                                                                    'uncooked_copra'
-                                                                                    ? `${weighIn.weight_kg} kg`
-                                                                                    : `${weighIn.count} pieces`}
+                                                                                {weighIn.type === 'coconut'
+                                                                                    ? `${weighIn.count} pieces`
+                                                                                    : `${weighIn.weight_kg} kg`}
                                                                             </div>
                                                                         </td>
                                                                         <td className="px-4 py-2 text-sm">
@@ -736,12 +726,9 @@ export default function WeighInsIndex({
                                                                 )}
                                                             </span>
                                                             <div className="mt-1 text-xs text-gray-500">
-                                                                {weighIn.type ===
-                                                                    'cooked_copra' ||
-                                                                weighIn.type ===
-                                                                    'uncooked_copra'
-                                                                    ? `${weighIn.weight_kg} kg`
-                                                                    : `${weighIn.count} pieces`}
+                                                                {weighIn.type === 'coconut'
+                                                                    ? `${weighIn.count} pieces`
+                                                                    : `${weighIn.weight_kg} kg`}
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3 text-sm font-semibold">

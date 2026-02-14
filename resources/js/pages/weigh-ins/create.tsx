@@ -8,7 +8,7 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
 import { toast } from '@/lib/toast';
-import { useEffect } from 'react';
+import { useMemo } from 'react';
 import { formatCurrency } from '@/lib/format-currency';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Weigh-Ins', href: '/weigh-ins' }, { title: 'Create', href: '/weigh-ins/create' }];
@@ -20,16 +20,37 @@ interface User {
 
 interface WeighInsCreateProps {
     users: User[];
-    prices: {
-        cooked_copra: number | null;
-        uncooked_copra: number | null;
-        coconut: number | null;
-    };
+    prices: Record<string, number | null>;
 }
 
+const KNOWN_TYPE_ORDER = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
+
+const getTypeLabel = (type: string): string =>
+    type
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+
 export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
+    const availableTypes = useMemo(() => {
+        const types = Array.from(new Set(Object.keys(prices)));
+
+        types.sort((a, b) => {
+            const aIndex = KNOWN_TYPE_ORDER.indexOf(a);
+            const bIndex = KNOWN_TYPE_ORDER.indexOf(b);
+            const aKnown = aIndex !== -1;
+            const bKnown = bIndex !== -1;
+
+            if (aKnown && bKnown) return aIndex - bIndex;
+            if (aKnown) return -1;
+            if (bKnown) return 1;
+            return a.localeCompare(b);
+        });
+
+        return types.length > 0 ? types : ['cooked_copra'];
+    }, [prices]);
+
     const { data, setData, post, processing, errors } = useForm({
-        type: 'cooked_copra',
+        type: availableTypes[0],
         weight_kg: '',
         count: '',
         weighed_by_user_id: '',
@@ -38,18 +59,18 @@ export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
     });
 
     const getCurrentPrice = () => {
-        return prices[data.type as keyof typeof prices] || null;
+        return prices[data.type as keyof typeof prices] ?? null;
     };
 
-    const isCopraType = () => {
-        return data.type === 'cooked_copra' || data.type === 'uncooked_copra';
+    const isKgType = () => {
+        return data.type !== 'coconut';
     };
 
     const calculateTotal = () => {
         const unitPrice = getCurrentPrice();
-        if (!unitPrice) return '0.00';
+        if (unitPrice === null) return '0.00';
         
-        if (isCopraType() && data.weight_kg) {
+        if (isKgType() && data.weight_kg) {
             return (parseFloat(data.weight_kg) * unitPrice).toFixed(2);
         } else if (data.type === 'coconut' && data.count) {
             return (parseInt(data.count) * unitPrice).toFixed(2);
@@ -100,15 +121,17 @@ export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
                                             <SelectValue placeholder="Select type" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
-                                            <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
-                                            <SelectItem value="coconut">Coconut</SelectItem>
+                                            {availableTypes.map((type) => (
+                                                <SelectItem key={type} value={type}>
+                                                    {getTypeLabel(type)}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                     {errors.type && <p className="text-sm text-red-600 mt-1">{errors.type}</p>}
                                 </div>
 
-                                {isCopraType() && (
+                                {isKgType() && (
                                     <div>
                                         <Label htmlFor="weight_kg">Weight (kg) *</Label>
                                         <Input 
@@ -141,7 +164,7 @@ export default function WeighInsCreate({ users, prices }: WeighInsCreateProps) {
 
                                 <div>
                                     <Label htmlFor="unit_price">
-                                        Unit Price ({isCopraType() ? 'per kg' : 'per piece'})
+                                        Unit Price ({isKgType() ? 'per kg' : 'per piece'})
                                     </Label>
                                     <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-300 dark:border-gray-600">
                                         {getCurrentPrice() !== null ? (

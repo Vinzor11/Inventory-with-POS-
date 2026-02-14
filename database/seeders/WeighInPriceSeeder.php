@@ -28,5 +28,10 @@ class WeighInPriceSeeder extends Seeder
             ['type' => 'coconut'],
             ['price' => 0.00]
         );
+
+        WeighInPrice::updateOrCreate(
+            ['type' => 'bagol'],
+            ['price' => 0.00]
+        );
     }
 }

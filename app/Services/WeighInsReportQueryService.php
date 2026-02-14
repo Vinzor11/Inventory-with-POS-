@@ -117,7 +117,7 @@ class WeighInsReportQueryService
             ->select('type')
             ->selectRaw('COUNT(DISTINCT weigh_in_transaction_id) as count')
             ->selectRaw('SUM(total_amount) as total_amount')
-            ->selectRaw('SUM(CASE WHEN type IN ("cooked_copra", "uncooked_copra") THEN weight_kg ELSE 0 END) as total_weight_kg')
+            ->selectRaw('SUM(CASE WHEN type IN ("cooked_copra", "uncooked_copra", "bagol") THEN weight_kg ELSE 0 END) as total_weight_kg')
             ->selectRaw('SUM(CASE WHEN type = "coconut" THEN count ELSE 0 END) as total_count')
             ->groupBy('type')
             ->get();
@@ -125,6 +125,7 @@ class WeighInsReportQueryService
         $summary = [
             'cooked_copra' => ['count' => 0, 'total_amount' => 0, 'total_weight_kg' => 0],
             'uncooked_copra' => ['count' => 0, 'total_amount' => 0, 'total_weight_kg' => 0],
+            'bagol' => ['count' => 0, 'total_amount' => 0, 'total_weight_kg' => 0],
             'coconut' => ['count' => 0, 'total_amount' => 0, 'total_count' => 0],
         ];
 
@@ -133,7 +134,7 @@ class WeighInsReportQueryService
             if (isset($summary[$type])) {
                 $summary[$type]['count'] = (int) $result->count;
                 $summary[$type]['total_amount'] = (float) $result->total_amount;
-                if (in_array($type, ['cooked_copra', 'uncooked_copra'])) {
+                if (in_array($type, ['cooked_copra', 'uncooked_copra', 'bagol'])) {
                     $summary[$type]['total_weight_kg'] = (float) $result->total_weight_kg;
                 } else {
                     $summary[$type]['total_count'] = (int) $result->total_count;

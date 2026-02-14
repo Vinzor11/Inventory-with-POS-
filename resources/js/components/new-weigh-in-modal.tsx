@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, router } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,14 +22,8 @@ interface User {
     name: string;
 }
 
-interface Prices {
-    cooked_copra: number | null;
-    uncooked_copra: number | null;
-    coconut: number | null;
-}
-
 interface WeighInItem {
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: string;
     weight_kg?: string;
     count?: string;
     notes?: string;
@@ -39,13 +33,33 @@ interface NewWeighInModalProps {
     isOpen: boolean;
     onClose: () => void;
     users: User[];
-    prices: Prices;
+    prices: Record<string, number | null>;
     onSuccess?: () => void;
 }
 
 export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: NewWeighInModalProps) {
+    const availableTypes = useMemo(() => {
+        const knownOrder = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
+        const types = Array.from(new Set(Object.keys(prices)));
+
+        types.sort((a, b) => {
+            const aIndex = knownOrder.indexOf(a);
+            const bIndex = knownOrder.indexOf(b);
+            const aKnown = aIndex !== -1;
+            const bKnown = bIndex !== -1;
+
+            if (aKnown && bKnown) return aIndex - bIndex;
+            if (aKnown) return -1;
+            if (bKnown) return 1;
+            return a.localeCompare(b);
+        });
+
+        return types.length > 0 ? types : ['cooked_copra'];
+    }, [prices]);
+
+    const defaultType = availableTypes[0];
     const [items, setItems] = useState<WeighInItem[]>([{
-        type: 'cooked_copra',
+        type: defaultType,
         weight_kg: '',
         count: '',
         notes: '',
@@ -62,7 +76,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
     useEffect(() => {
         if (isOpen) {
             setItems([{
-                type: 'cooked_copra',
+                type: defaultType,
                 weight_kg: '',
                 count: '',
                 notes: '',
@@ -74,21 +88,21 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
                 notes: '',
             });
         }
-    }, [isOpen, reset]);
+    }, [isOpen, reset, defaultType]);
 
     const getPrice = (type: string) => {
-        return prices[type as keyof typeof prices] || null;
+        return prices[type as keyof typeof prices] ?? null;
     };
 
-    const isCopraType = (type: string) => {
-        return type === 'cooked_copra' || type === 'uncooked_copra';
+    const isKgType = (type: string) => {
+        return type !== 'coconut';
     };
 
     const calculateItemTotal = (item: WeighInItem) => {
         const unitPrice = getPrice(item.type);
-        if (!unitPrice) return 0;
+        if (unitPrice === null) return 0;
         
-        if (isCopraType(item.type) && item.weight_kg) {
+        if (isKgType(item.type) && item.weight_kg) {
             return parseFloat(item.weight_kg) * unitPrice;
         } else if (item.type === 'coconut' && item.count) {
             return parseInt(item.count) * unitPrice;
@@ -102,7 +116,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
 
     const addItem = () => {
         setItems([...items, {
-            type: 'cooked_copra',
+            type: defaultType,
             weight_kg: '',
             count: '',
             notes: '',
@@ -149,7 +163,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
         
         // Validate items - check for valid numeric values
         const validItems = items.filter(item => {
-            if (isCopraType(item.type)) {
+            if (isKgType(item.type)) {
                 const weight = item.weight_kg?.trim();
                 return weight && !isNaN(parseFloat(weight)) && parseFloat(weight) > 0;
             } else {
@@ -170,7 +184,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
                 notes: item.notes?.trim() || undefined,
             };
 
-            if (isCopraType(item.type)) {
+            if (isKgType(item.type)) {
                 const weight = parseFloat(item.weight_kg!.trim());
                 if (!isNaN(weight) && weight > 0) {
                     baseItem.weight_kg = weight.toString();
@@ -185,7 +199,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
             return baseItem;
         }).filter(item => {
             // Final validation - ensure each item has required field
-            if (isCopraType(item.type)) {
+            if (isKgType(item.type)) {
                 return item.weight_kg && parseFloat(item.weight_kg) > 0;
             } else {
                 return item.count && parseInt(item.count) > 0;
@@ -216,7 +230,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
             onSuccess: () => {
                 reset();
                 setItems([{
-                    type: 'cooked_copra',
+                    type: defaultType,
                     weight_kg: '',
                     count: '',
                     notes: '',
@@ -240,7 +254,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
     const handleClose = () => {
         reset();
         setItems([{
-            type: 'cooked_copra',
+            type: defaultType,
             weight_kg: '',
             count: '',
             notes: '',
@@ -348,14 +362,18 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
-                                                    <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
-                                                    <SelectItem value="coconut">Coconut</SelectItem>
+                                                    {availableTypes.map((type) => (
+                                                        <SelectItem key={type} value={type}>
+                                                            {type
+                                                                .replace(/_/g, ' ')
+                                                                .replace(/\b\w/g, (char) => char.toUpperCase())}
+                                                        </SelectItem>
+                                                    ))}
                                                 </SelectContent>
                                             </Select>
                                         </div>
 
-                                        {isCopraType(item.type) ? (
+                                        {isKgType(item.type) ? (
                                             <div>
                                                 <Label>Weight (kg) *</Label>
                                                 <Input 
@@ -382,7 +400,7 @@ export function NewWeighInModal({ isOpen, onClose, users, prices, onSuccess }: N
 
                                         <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
                                             <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                                                Unit Price: {getPrice(item.type) ? `₱${formatCurrency(getPrice(item.type))}` : 'Not set'}
+                                                Unit Price: {getPrice(item.type) !== null ? `PHP ${formatCurrency(getPrice(item.type) || 0)}` : 'Not set'}
                                             </div>
                                             <div className="text-sm font-semibold">
                                                 Item Total: ₱{formatCurrency(calculateItemTotal(item))}

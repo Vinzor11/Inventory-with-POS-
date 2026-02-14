@@ -31,7 +31,7 @@ interface User {
 interface WeighIn {
     id: number;
     ref_num: string;
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: 'cooked_copra' | 'uncooked_copra' | 'coconut' | 'bagol';
     weight_kg: number | null;
     count: number | null;
     unit_price: number;
@@ -74,6 +74,10 @@ function TypeBadge({ type }: { type: string }) {
         coconut: { 
             label: 'Coconut', 
             className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' 
+        },
+        bagol: {
+            label: 'Bagol',
+            className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200'
         },
     };
 
@@ -171,7 +175,7 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
     // Calculate summary
     const totalAmount = weighIns.data.reduce((sum, weighIn) => sum + parseFloat(String(weighIn.total_amount || 0)), 0);
     const totalWeight = weighIns.data
-        .filter(w => w.type === 'cooked_copra' || w.type === 'uncooked_copra')
+        .filter(w => w.type !== 'coconut')
         .reduce((sum, weighIn) => sum + parseFloat(String(weighIn.weight_kg || 0)), 0);
     const totalCount = weighIns.data
         .filter(w => w.type === 'coconut')
@@ -230,6 +234,7 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
                                     <SelectItem value="all">All Types</SelectItem>
                                     <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
                                     <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
+                                    <SelectItem value="bagol">Bagol</SelectItem>
                                     <SelectItem value="coconut">Coconut</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -311,6 +316,7 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
                                 <SelectItem value="all">All Types</SelectItem>
                                 <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
                                 <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
+                                <SelectItem value="bagol">Bagol</SelectItem>
                                 <SelectItem value="coconut">Coconut</SelectItem>
                             </SelectContent>
                         </Select>
@@ -390,6 +396,8 @@ export default function WeighInsReport({ weighIns, users, filters }: WeighInsRep
                                             ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
                                             : weighIn.type === 'uncooked_copra'
                                               ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'
+                                              : weighIn.type === 'bagol'
+                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200'
                                               : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200',
                                 },
                                 {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Product;
 use App\Models\User;
 use App\Models\WeighIn;
 use App\Models\WeighInPrice;
@@ -12,6 +13,7 @@ use App\Services\WeighInInventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class WeighInController extends Controller
@@ -31,7 +33,8 @@ class WeighInController extends Controller
             ->orderBy('weighed_at', 'desc')
             ->orderBy('created_at', 'desc');
 
-        if ($type && in_array($type, ['cooked_copra', 'uncooked_copra', 'coconut'])) {
+        $allowedTypes = $this->getAllowedWeighInTypes();
+        if ($type && in_array($type, $allowedTypes, true)) {
             $query->whereHas('weighIns', function ($q) use ($type) {
                 $q->where('type', $type);
             });
@@ -127,10 +130,12 @@ class WeighInController extends Controller
      */
     public function batchStore(Request $request): JsonResponse
     {
+        $allowedTypes = $this->getAllowedWeighInTypes();
+
         $request->validate([
             'pin' => 'required|string',
             'weigh_ins' => 'required|array|min:1',
-            'weigh_ins.*.type' => 'required|in:cooked_copra,uncooked_copra,coconut',
+            'weigh_ins.*.type' => ['required', Rule::in($allowedTypes)],
             'weigh_ins.*.weight_kg' => 'nullable|numeric|min:0.01',
             'weigh_ins.*.count' => 'nullable|integer|min:1',
         ]);
@@ -350,5 +355,45 @@ class WeighInController extends Controller
         if (!$request->user()->isAdmin()) {
             abort(403, 'Only administrators can perform this action.');
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getAllowedWeighInTypes(): array
+    {
+        $agriTypes = Product::query()
+            ->whereHas('category', function ($query) {
+                $query->where('name', 'Agricultural Products');
+            })
+            ->get(['name', 'sku'])
+            ->map(function (Product $product) {
+                return $this->inferTypeKeyFromProduct($product);
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return array_values(array_unique(array_merge(
+            ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'],
+            WeighInPrice::query()->pluck('type')->all(),
+            $agriTypes
+        )));
+    }
+
+    private function inferTypeKeyFromProduct(Product $product): ?string
+    {
+        $sku = trim((string) $product->sku);
+        if ($sku !== '') {
+            return strtolower(str_replace('-', '_', $sku));
+        }
+
+        $name = trim((string) $product->name);
+        if ($name === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', '_', $name), '_'));
+        return $normalized !== '' ? $normalized : null;
     }
 }

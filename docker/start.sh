@@ -1,6 +1,28 @@
 #!/bin/bash
 set -e
 
+retry_command() {
+  local max_attempts="$1"
+  local delay_seconds="$2"
+  shift 2
+
+  local attempt=1
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -ge "$max_attempts" ]]; then
+      echo "Command failed after ${attempt} attempts: $*"
+      return 1
+    fi
+
+    echo "Attempt ${attempt}/${max_attempts} failed. Retrying in ${delay_seconds}s..."
+    attempt=$((attempt + 1))
+    sleep "$delay_seconds"
+  done
+}
+
 # Railway env vars are raw process env; strip accidental wrapping quotes.
 strip_wrapping_quotes() {
   local name="$1"
@@ -26,25 +48,28 @@ done
 echo "Clearing cached config/routes/views..."
 php artisan optimize:clear
 
+echo "Waiting for database connection..."
+retry_command 20 3 php artisan tinker --execute="\\Illuminate\\Support\\Facades\\DB::connection()->getPdo(); echo 'db-ready';" >/dev/null
+
 echo "Running migrations..."
-php artisan migrate --force
+retry_command 10 3 php artisan migrate --force
 
 echo "Running bootstrap seeders..."
-PRODUCT_COUNT=$(php artisan tinker --execute="echo \\App\\Models\\Product::query()->count();" | tr -d '\r\n')
+PRODUCT_COUNT=$(php artisan tinker --execute="echo \\App\\Models\\Product::query()->count();" | tr -d '\r\n' || echo "0")
 if [[ "$PRODUCT_COUNT" == "0" ]]; then
   echo "No products found, running ProductSeeder..."
-  php artisan db:seed --class=Database\\Seeders\\ProductSeeder --force --no-interaction
+  retry_command 5 3 php artisan db:seed --class=Database\\Seeders\\ProductSeeder --force --no-interaction
 fi
 
 echo "Ensuring agricultural products and weigh-in prices exist..."
-php artisan db:seed --class=Database\\Seeders\\AgriculturalProductsSeeder --force --no-interaction
-php artisan db:seed --class=Database\\Seeders\\WeighInPriceSeeder --force --no-interaction
+retry_command 5 3 php artisan db:seed --class=Database\\Seeders\\AgriculturalProductsSeeder --force --no-interaction
+retry_command 5 3 php artisan db:seed --class=Database\\Seeders\\WeighInPriceSeeder --force --no-interaction
 
 echo "Creating storage link..."
 php artisan storage:link || true
 
 echo "Running ProductImageSeeder..."
-php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force --no-interaction
+retry_command 5 3 php artisan db:seed --class=Database\\Seeders\\ProductImageSeeder --force --no-interaction
 
 echo "Rebuilding optimized caches with runtime environment..."
 php artisan config:cache

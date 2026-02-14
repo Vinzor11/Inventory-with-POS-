@@ -141,6 +141,13 @@ fun WeighScreen(
                     gradient = listOf(Color(0xFFFDE68A), Color(0xFFF59E0B)),
                     unitLabel = "/pc",
                 ),
+                WeighCategory(
+                    type = "bagol",
+                    label = "Bagol",
+                    description = "Record bagol weigh-in",
+                    gradient = listOf(Color(0xFFD1FAE5), Color(0xFF34D399)),
+                    unitLabel = "/kg",
+                ),
             )
         }
 
@@ -887,6 +894,7 @@ private fun WeighDraftRow(
         "cooked_copra" -> "Cooked Copra"
         "uncooked_copra" -> "Uncooked Copra"
         "coconut" -> "Coconut"
+        "bagol" -> "Bagol"
         else -> item.type.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
     }
     Card(

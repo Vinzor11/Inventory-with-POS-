@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Product;
 use App\Models\User;
 use App\Models\WeighIn;
 use App\Models\WeighInTransaction;
@@ -21,28 +22,113 @@ class WeighInsLandingController extends Controller
      */
     public function index(): Response
     {
-        // Get current prices for all types
-        $cookedCopraPrice = \App\Models\WeighInPrice::getPriceForType('cooked_copra');
-        $uncookedCopraPrice = \App\Models\WeighInPrice::getPriceForType('uncooked_copra');
-        $coconutPrice = \App\Models\WeighInPrice::getPriceForType('coconut');
+        // Get current prices for all existing types
+        $prices = \App\Models\WeighInPrice::query()
+            ->get()
+            ->mapWithKeys(function ($row) {
+                return [$row->type => $row->price !== null ? (float) $row->price : 0.0];
+            })
+            ->toArray();
 
         // Get agricultural products with their images
-        $agriculturalProducts = \App\Models\Product::whereHas('category', function ($query) {
+        $agriculturalProducts = Product::whereHas('category', function ($query) {
             $query->where('name', 'Agricultural Products');
-        })->get(['id', 'name', 'sku', 'image'])->keyBy('sku');
+        })->get(['id', 'name', 'sku', 'image']);
+
+        $productsByType = [];
+        foreach ($agriculturalProducts as $product) {
+            $typeKey = $this->inferTypeKeyFromProduct($product);
+            if ($typeKey && !array_key_exists($typeKey, $productsByType)) {
+                $productsByType[$typeKey] = $product;
+            }
+        }
+
+        $typeKeys = array_values(array_unique(array_merge(
+            array_keys($prices),
+            array_keys($productsByType)
+        )));
+        $typeKeys = $this->sortTypeKeys($typeKeys);
+
+        $pricesWithDefaults = [];
+        $products = [];
+        foreach ($typeKeys as $type) {
+            $pricesWithDefaults[$type] = $prices[$type] ?? 0.0;
+            $product = $productsByType[$type] ?? null;
+            if ($product) {
+                $product = clone $product;
+                $product->image = $this->resolveImageForType($type, $product->image);
+            }
+            $products[$type] = $product;
+        }
 
         return Inertia::render('weigh-ins-landing', [
-            'prices' => [
-                'cooked_copra' => $cookedCopraPrice,
-                'uncooked_copra' => $uncookedCopraPrice,
-                'coconut' => $coconutPrice,
-            ],
-            'products' => [
-                'cooked_copra' => $agriculturalProducts->get('COOKED-COPRA'),
-                'uncooked_copra' => $agriculturalProducts->get('UNCOOKED-COPRA'),
-                'coconut' => $agriculturalProducts->get('COCONUT'),
-            ],
+            'prices' => $pricesWithDefaults,
+            'products' => $products,
         ]);
+    }
+
+    private function inferTypeKeyFromProduct(Product $product): ?string
+    {
+        $sku = trim((string) $product->sku);
+        if ($sku !== '') {
+            return strtolower(str_replace('-', '_', $sku));
+        }
+
+        $name = trim((string) $product->name);
+        if ($name === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', '_', $name), '_'));
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * Prioritize known weigh-in types, then sort remaining keys alphabetically.
+     *
+     * @param array<int, string> $typeKeys
+     * @return array<int, string>
+     */
+    private function sortTypeKeys(array $typeKeys): array
+    {
+        $knownOrder = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
+
+        usort($typeKeys, function (string $a, string $b) use ($knownOrder) {
+            $aIndex = array_search($a, $knownOrder, true);
+            $bIndex = array_search($b, $knownOrder, true);
+
+            $aKnown = $aIndex !== false;
+            $bKnown = $bIndex !== false;
+
+            if ($aKnown && $bKnown) {
+                return $aIndex <=> $bIndex;
+            }
+
+            if ($aKnown) {
+                return -1;
+            }
+
+            if ($bKnown) {
+                return 1;
+            }
+
+            return strcmp($a, $b);
+        });
+
+        return $typeKeys;
+    }
+
+    private function resolveImageForType(string $type, ?string $image): ?string
+    {
+        if ($type === 'bagol') {
+            foreach (['/bagol.jpg', '/bagol.jpeg', '/bagol.png'] as $candidate) {
+                if (file_exists(public_path(ltrim($candidate, '/')))) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return $image;
     }
 
     /**
@@ -89,7 +175,7 @@ class WeighInsLandingController extends Controller
         $request->validate([
             'pin' => 'required|string',
             'weigh_ins' => 'required|array|min:1',
-            'weigh_ins.*.type' => 'required|in:cooked_copra,uncooked_copra,coconut',
+            'weigh_ins.*.type' => 'required|in:cooked_copra,uncooked_copra,coconut,bagol',
             'weigh_ins.*.weight_kg' => 'nullable|numeric|min:0.01',
             'weigh_ins.*.count' => 'nullable|integer|min:1',
         ]);

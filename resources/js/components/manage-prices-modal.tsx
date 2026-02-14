@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,9 +16,7 @@ import { toast } from '@/lib/toast';
 import { formatCurrency } from '@/lib/format-currency';
 
 interface Prices {
-    cooked_copra: number | null;
-    uncooked_copra: number | null;
-    coconut: number | null;
+    [key: string]: number | null;
 }
 
 interface ManagePricesModalProps {
@@ -29,19 +27,20 @@ interface ManagePricesModalProps {
     onSuccess?: () => void;
 }
 
-type PriceType = 'cooked_copra' | 'uncooked_copra' | 'coconut';
+const KNOWN_PRICE_ORDER = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
 
-const priceTypeLabels: Record<PriceType, string> = {
-    cooked_copra: 'Cooked Copra',
-    uncooked_copra: 'Uncooked Copra',
-    coconut: 'Coconut',
+const toLabel = (type: string) => {
+    const known: Record<string, string> = {
+        cooked_copra: 'Cooked Copra',
+        uncooked_copra: 'Uncooked Copra',
+        coconut: 'Coconut',
+        bagol: 'Bagol',
+    };
+
+    return known[type] || type.replace(/_/g, ' ').replace(/\b\w/g, (s) => s.toUpperCase());
 };
 
-const priceTypeUnits: Record<PriceType, string> = {
-    cooked_copra: 'per kg',
-    uncooked_copra: 'per kg',
-    coconut: 'per piece',
-};
+const toUnit = (type: string) => (type === 'coconut' ? 'per piece' : 'per kg');
 
 export function ManagePricesModal({
     isOpen,
@@ -50,24 +49,37 @@ export function ManagePricesModal({
     canEdit,
     onSuccess,
 }: ManagePricesModalProps) {
-    const [selectedPriceType, setSelectedPriceType] = useState<PriceType>('cooked_copra');
-    
+    const priceTypes = useMemo(() => {
+        const keys = Object.keys(prices);
+        const ordered = KNOWN_PRICE_ORDER.filter((type) => keys.includes(type));
+        const extras = keys.filter((type) => !KNOWN_PRICE_ORDER.includes(type)).sort();
+        return [...ordered, ...extras];
+    }, [prices]);
+
+    const [selectedPriceType, setSelectedPriceType] = useState<string>(priceTypes[0] || 'cooked_copra');
+
     const { data, setData, put, processing, errors, reset } = useForm({
         price: '',
     });
 
-    // Reset form when modal opens or price type changes
     useEffect(() => {
         if (isOpen) {
-            const currentPrice = prices[selectedPriceType];
+            const initialType = priceTypes.includes(selectedPriceType)
+                ? selectedPriceType
+                : (priceTypes[0] || 'cooked_copra');
+
+            if (initialType !== selectedPriceType) {
+                setSelectedPriceType(initialType);
+            }
+
+            const currentPrice = prices[initialType];
             setData('price', currentPrice?.toString() || '0.00');
         }
-    }, [isOpen, selectedPriceType, prices, setData]);
+    }, [isOpen, selectedPriceType, prices, setData, priceTypes]);
 
     const handlePriceTypeChange = (value: string) => {
-        const priceType = value as PriceType;
-        setSelectedPriceType(priceType);
-        const currentPrice = prices[priceType];
+        setSelectedPriceType(value);
+        const currentPrice = prices[value];
         setData('price', currentPrice?.toString() || '0.00');
     };
 
@@ -82,18 +94,17 @@ export function ManagePricesModal({
             preserveState: true,
             preserveScroll: true,
             onSuccess: () => {
-                // Flash message will be shown automatically
                 reset();
                 onClose();
                 onSuccess?.();
             },
-            onError: (errors) => {
-                const firstError = Object.values(errors)[0];
+            onError: (formErrors) => {
+                const firstError = Object.values(formErrors)[0];
                 if (firstError) {
                     const errorMessage = Array.isArray(firstError) ? firstError[0] : firstError;
                     toast.error(errorMessage);
                 } else {
-                    toast.error(`Failed to update ${priceTypeLabels[selectedPriceType]} price.`);
+                    toast.error(`Failed to update ${toLabel(selectedPriceType)} price.`);
                 }
             },
         });
@@ -101,7 +112,7 @@ export function ManagePricesModal({
 
     const handleClose = () => {
         reset();
-        setSelectedPriceType('cooked_copra');
+        setSelectedPriceType(priceTypes[0] || 'cooked_copra');
         onClose();
     };
 
@@ -132,16 +143,16 @@ export function ManagePricesModal({
                                     <SelectValue placeholder="Select price type" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="cooked_copra">Cooked Copra</SelectItem>
-                                    <SelectItem value="uncooked_copra">Uncooked Copra</SelectItem>
-                                    <SelectItem value="coconut">Coconut</SelectItem>
+                                    {priceTypes.map((type) => (
+                                        <SelectItem key={type} value={type}>{toLabel(type)}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
 
                         <div>
                             <Label htmlFor="price">
-                                Price ({priceTypeUnits[selectedPriceType]}) (₱) *
+                                Price ({toUnit(selectedPriceType)}) (PHP) *
                             </Label>
                             <Input
                                 id="price"
@@ -158,7 +169,7 @@ export function ManagePricesModal({
                                 <p className="text-sm text-red-600 mt-1">{errors.price}</p>
                             )}
                             <p className="text-xs text-gray-500 mt-1">
-                                Current price: ₱{formatCurrency(prices[selectedPriceType] || 0)}
+                                Current price: PHP {formatCurrency(prices[selectedPriceType] || 0)}
                             </p>
                         </div>
                     </div>
@@ -167,7 +178,7 @@ export function ManagePricesModal({
                             Cancel
                         </Button>
                         <Button type="submit" disabled={!canEdit || processing}>
-                            {processing ? 'Updating...' : `Update ${priceTypeLabels[selectedPriceType]} Price`}
+                            {processing ? 'Updating...' : `Update ${toLabel(selectedPriceType)} Price`}
                         </Button>
                     </DialogFooter>
                 </form>
@@ -175,4 +186,3 @@ export function ManagePricesModal({
         </Dialog>
     );
 }
-

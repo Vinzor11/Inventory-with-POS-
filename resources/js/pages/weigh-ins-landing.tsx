@@ -46,50 +46,34 @@ interface ProductInfo {
 }
 
 interface WeighInsLandingProps {
-    prices: {
-        cooked_copra: number | null;
-        uncooked_copra: number | null;
-        coconut: number | null;
-    };
-    products: {
-        cooked_copra: ProductInfo | null;
-        uncooked_copra: ProductInfo | null;
-        coconut: ProductInfo | null;
-    };
+    prices: Record<string, number | null>;
+    products: Record<string, ProductInfo | null>;
 }
 
 interface CartItem {
     id: string; // Temporary ID for cart items
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: string;
     weight_kg: number | null;
     count: number | null;
     unit_price: number;
     total_amount: number;
 }
 
-const categories = [
-    {
-        type: 'cooked_copra' as const,
-        label: 'Cooked Copra',
-        description: 'Record cooked copra weigh-in',
-        icon: Scale,
-        color: 'bg-orange-100 text-orange-800 border-orange-200',
-    },
-    {
-        type: 'uncooked_copra' as const,
-        label: 'Uncooked Copra',
-        description: 'Record uncooked copra weigh-in',
-        icon: Scale,
-        color: 'bg-amber-100 text-amber-800 border-amber-200',
-    },
-    {
-        type: 'coconut' as const,
-        label: 'Coconut',
-        description: 'Record coconut weigh-in',
-        icon: Scale,
-        color: 'bg-green-100 text-green-800 border-green-200',
-    },
+const CATEGORY_COLORS = [
+    'bg-orange-100 text-orange-800 border-orange-200',
+    'bg-amber-100 text-amber-800 border-amber-200',
+    'bg-green-100 text-green-800 border-green-200',
+    'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'bg-sky-100 text-sky-800 border-sky-200',
+    'bg-indigo-100 text-indigo-800 border-indigo-200',
 ];
+
+const KNOWN_TYPE_ORDER = ['cooked_copra', 'uncooked_copra', 'bagol', 'coconut'];
+
+const formatTypeLabel = (type: string): string =>
+    type
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (s) => s.toUpperCase());
 
 export default function WeighInsLanding({
     prices,
@@ -108,18 +92,16 @@ export default function WeighInsLanding({
 
     // Get current price for selected type
     const getCurrentPrice = useCallback(
-        (type: 'cooked_copra' | 'uncooked_copra' | 'coconut') => {
-            return prices[type] || null;
+        (type: string) => {
+            return prices[type] ?? null;
         },
         [prices],
     );
 
     // Handle category click - add to cart directly (like POS)
-    const handleCategoryClick = (
-        type: 'cooked_copra' | 'uncooked_copra' | 'coconut',
-    ) => {
+    const handleCategoryClick = (type: string) => {
         const unitPrice = getCurrentPrice(type);
-        if (!unitPrice) {
+        if (unitPrice === null) {
             toast.error(
                 'Price not set for this type. Please set the price first.',
             );
@@ -166,11 +148,7 @@ export default function WeighInsLanding({
                         ) {
                             updated.total_amount =
                                 updated.count * updated.unit_price;
-                        } else if (
-                            (updated.type === 'cooked_copra' ||
-                                updated.type === 'uncooked_copra') &&
-                            updated.weight_kg !== null
-                        ) {
+                        } else if (updated.weight_kg !== null) {
                             updated.total_amount =
                                 updated.weight_kg * updated.unit_price;
                         }
@@ -326,18 +304,36 @@ export default function WeighInsLanding({
         [pin, cart, isProcessing, unpaidTransactions],
     );
 
-    const getTypeLabel = (
-        type: 'cooked_copra' | 'uncooked_copra' | 'coconut',
-    ) => {
-        switch (type) {
-            case 'cooked_copra':
-                return 'Cooked Copra';
-            case 'uncooked_copra':
-                return 'Uncooked Copra';
-            case 'coconut':
-                return 'Coconut';
-        }
-    };
+    const getTypeLabel = (type: string) => formatTypeLabel(type);
+
+    const categories = useMemo(() => {
+        const typeKeys = Array.from(
+            new Set([...Object.keys(products || {}), ...Object.keys(prices || {})]),
+        ).filter((type) => type.trim() !== '');
+
+        typeKeys.sort((a, b) => {
+            const aIndex = KNOWN_TYPE_ORDER.indexOf(a);
+            const bIndex = KNOWN_TYPE_ORDER.indexOf(b);
+            const aKnown = aIndex !== -1;
+            const bKnown = bIndex !== -1;
+
+            if (aKnown && bKnown) return aIndex - bIndex;
+            if (aKnown) return -1;
+            if (bKnown) return 1;
+            return a.localeCompare(b);
+        });
+
+        return typeKeys.map((type, index) => {
+            const label = formatTypeLabel(type);
+            return {
+                type,
+                label,
+                description: `Record ${label.toLowerCase()} weigh-in`,
+                icon: Scale,
+                color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+            };
+        });
+    }, [prices, products]);
 
     const getCurrentTime = useMemo(() => {
         return new Date().toLocaleTimeString('en-US', {
@@ -484,6 +480,10 @@ export default function WeighInsLanding({
                                         category.type,
                                     );
                                     const product = products[category.type];
+                                    const imageSrc =
+                                        category.type === 'bagol'
+                                            ? (product?.image ?? '/bagol.jpg')
+                                            : (product?.image ?? null);
 
                                     return (
                                         <div
@@ -499,9 +499,9 @@ export default function WeighInsLanding({
                                             <div
                                                 className={`aspect-square ${category.color} relative flex items-center justify-center overflow-hidden rounded-t-lg`}
                                             >
-                                                {product?.image ? (
+                                                {imageSrc ? (
                                                     <ProductImage
-                                                        src={product.image}
+                                                        src={imageSrc}
                                                         alt={category.label}
                                                         className="absolute inset-0 h-full w-full object-cover"
                                                         fallbackClassName="absolute inset-0 flex items-center justify-center"

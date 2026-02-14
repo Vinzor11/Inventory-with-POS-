@@ -15,7 +15,7 @@ interface User {
 interface WeighIn {
     id: number;
     ref_num: string;
-    type: 'cooked_copra' | 'uncooked_copra' | 'coconut';
+    type: 'cooked_copra' | 'uncooked_copra' | 'coconut' | 'bagol';
     weight_kg: number | null;
     count: number | null;
     unit_price: number;
@@ -125,8 +125,12 @@ export default function WeighInSuccess({ transaction, weighIn }: WeighInSuccessP
                 return 'Uncooked Copra';
             case 'coconut':
                 return 'Coconut';
+            case 'bagol':
+                return 'Bagol';
             default:
-                return type;
+                return type
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, (char) => char.toUpperCase());
         }
     };
 

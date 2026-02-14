@@ -430,6 +430,7 @@ private fun WeighFiltersContent(
                     FilterOption("all", "All"),
                     FilterOption("cooked_copra", "Cooked Copra"),
                     FilterOption("uncooked_copra", "Uncooked Copra"),
+                    FilterOption("bagol", "Bagol"),
                     FilterOption("coconut", "Coconut"),
                 ),
             selectedValue = type,

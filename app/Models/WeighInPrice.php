@@ -20,7 +20,22 @@ class WeighInPrice extends Model
      */
     public static function getPriceForType(string $type): ?float
     {
-        $price = self::where('type', $type)->first();
-        return $price ? (float) $price->price : null;
+        $normalizedType = strtolower(trim($type));
+        $price = self::query()->where('type', $normalizedType)->first();
+
+        if ($price) {
+            return (float) ($price->price ?? 0);
+        }
+
+        try {
+            self::query()->updateOrCreate(
+                ['type' => $normalizedType],
+                ['price' => 0.00]
+            );
+
+            return 0.0;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }
