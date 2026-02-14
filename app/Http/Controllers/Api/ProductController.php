@@ -16,10 +16,66 @@ class ProductController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage = $request->input('per_page', 15);
-        $search = $request->input('search');
-        $categoryId = $request->input('category_id');
-        $activeOnly = $request->boolean('active_only', false);
+        $validated = $request->validate([
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'search' => ['nullable', 'string', 'max:80'],
+            'category_id' => ['nullable', 'integer'],
+            'active_only' => ['nullable', 'boolean'],
+            'compact' => ['nullable', 'boolean'],
+        ]);
+
+        $perPage = (int) ($validated['per_page'] ?? 30);
+        $search = $validated['search'] ?? null;
+        $categoryId = $validated['category_id'] ?? null;
+        $activeOnly = (bool) ($validated['active_only'] ?? false);
+        $compact = (bool) ($validated['compact'] ?? false);
+
+        if ($compact) {
+            $query = ProductVariant::query()
+                ->join('products', 'products.id', '=', 'product_variants.product_id')
+                ->leftJoin('product_categories', 'product_categories.id', '=', 'products.category_id')
+                ->leftJoin('inventory', 'inventory.product_variant_id', '=', 'product_variants.id')
+                ->select([
+                    'product_variants.id',
+                    'products.sku',
+                    'product_variants.description',
+                    'product_variants.unit_price',
+                    'products.id as product_id',
+                    'products.name as product_name',
+                    'products.image',
+                    'products.base_unit',
+                    'products.is_active',
+                    'products.category_id',
+                    'product_categories.name as category_name',
+                    'inventory.quantity_on_hand',
+                    'product_variants.updated_at',
+                ])
+                ->orderBy('products.name')
+                ->orderBy('product_variants.id');
+
+            if ($search) {
+                $query->where(function ($q) use ($search): void {
+                    $q->where('products.name', 'like', "%{$search}%")
+                        ->orWhere('product_variants.description', 'like', "%{$search}%")
+                        ->orWhere('products.sku', 'like', "%{$search}%");
+                });
+            }
+
+            if ($categoryId) {
+                $query->where('products.category_id', $categoryId);
+            }
+
+            if ($activeOnly) {
+                $query->where('products.is_active', true);
+            }
+
+            $page = $query->simplePaginate($perPage)->appends($request->query());
+
+            return response()->json([
+                'success' => true,
+                'data' => $page,
+            ]);
+        }
 
         $query = Product::with(['category', 'variants.inventory'])
             ->orderBy('name');
@@ -39,7 +95,7 @@ class ProductController extends Controller
             $query->where('is_active', true);
         }
 
-        $products = $query->paginate($perPage);
+        $products = $query->paginate($perPage)->appends($request->query());
 
         return response()->json([
             'success' => true,

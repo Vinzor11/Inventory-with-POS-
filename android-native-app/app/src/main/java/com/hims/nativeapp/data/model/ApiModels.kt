@@ -813,3 +813,143 @@ data class WeighInTransaction(
     @SerializedName("weigh_ins")
     val weighIns: List<WeighInItem> = emptyList(),
 )
+
+data class BootstrapResponse(
+    @SerializedName("server_time")
+    val serverTime: String,
+    val user: BootstrapUser,
+    val branch: BootstrapBranch,
+    val permissions: List<String>,
+    val config: BootstrapConfig,
+    val lookups: BootstrapLookups,
+    @SerializedName("pos_seed")
+    val posSeed: List<Product> = emptyList(),
+)
+
+data class BootstrapUser(
+    val id: Int,
+    val name: String,
+    val role: String,
+    @SerializedName("is_active")
+    val isActive: Boolean,
+)
+
+data class BootstrapBranch(
+    val id: Int,
+    val name: String,
+    val timezone: String,
+    val currency: String,
+)
+
+data class BootstrapConfig(
+    @SerializedName("tax_mode")
+    val taxMode: String,
+    @SerializedName("tax_rate")
+    val taxRate: Double,
+    @SerializedName("price_precision")
+    val pricePrecision: Int,
+)
+
+data class BootstrapLookups(
+    val categories: List<ProductCategory>,
+    @SerializedName("payment_methods")
+    val paymentMethods: List<BootstrapPaymentMethod>,
+    val uom: List<BootstrapUom>,
+)
+
+data class BootstrapPaymentMethod(
+    val id: String,
+    val name: String,
+)
+
+data class BootstrapUom(
+    val id: Int,
+    val code: String,
+    val name: String,
+)
+
+data class SimplePaginatedData<T>(
+    @SerializedName("current_page")
+    val currentPage: Int,
+    @SerializedName("next_page_url")
+    val nextPageUrl: String?,
+    @SerializedName("per_page")
+    val perPage: Int,
+    val data: List<T>,
+)
+
+data class CompactProductRow(
+    val id: Int,
+    val sku: String? = null,
+    val description: String? = null,
+    @SerializedName("unit_price")
+    val unitPrice: Double = 0.0,
+    @SerializedName("product_id")
+    val productId: Int,
+    @SerializedName("product_name")
+    val productName: String,
+    @SerializedName("category_name")
+    val categoryName: String? = null,
+    @SerializedName("quantity_on_hand")
+    val quantityOnHand: Double? = null,
+    @SerializedName("is_active")
+    val isActive: Boolean = true,
+)
+
+data class TransactionRow(
+    val id: Int,
+    val number: String,
+    @SerializedName("customer_name")
+    val customerName: String? = null,
+    val total: Double,
+    val status: String,
+    @SerializedName("created_at")
+    val createdAt: String,
+)
+
+data class OutboxSaleCreateRequest(
+    @SerializedName("client_request_id")
+    val clientRequestId: String,
+    val items: List<OutboxSaleItemRequest>,
+    @SerializedName("payment_amount")
+    val paymentAmount: Double? = null,
+    @SerializedName("payment_method")
+    val paymentMethod: String? = null,
+    @SerializedName("is_for_delivery")
+    val isForDelivery: Boolean = false,
+    @SerializedName("delivery_name")
+    val deliveryName: String? = null,
+    @SerializedName("delivery_address")
+    val deliveryAddress: String? = null,
+    @SerializedName("delivery_contact")
+    val deliveryContact: String? = null,
+    val notes: String? = null,
+)
+
+data class OutboxSaleItemRequest(
+    @SerializedName("product_variant_id")
+    val productVariantId: Int,
+    val quantity: Double,
+    @SerializedName("unit_price")
+    val unitPrice: Double? = null,
+)
+
+data class OutboxStockMovementCreateRequest(
+    @SerializedName("client_request_id")
+    val clientRequestId: String,
+    @SerializedName("product_variant_id")
+    val productVariantId: Int,
+    @SerializedName("movement_type")
+    val movementType: String,
+    val qty: Double,
+    val reason: String? = null,
+    val notes: String? = null,
+    @SerializedName("unit_cost")
+    val unitCost: Double? = null,
+)
+
+data class OutboxWriteAck(
+    val id: Int,
+    @SerializedName("client_request_id")
+    val clientRequestId: String,
+)

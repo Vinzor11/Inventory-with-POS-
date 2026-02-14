@@ -7,6 +7,7 @@ import com.hims.nativeapp.data.model.AddPaymentRequest
 import com.hims.nativeapp.data.model.CookedCopraSaleRequest
 import com.hims.nativeapp.data.model.CookedCopraSaleResult
 import com.hims.nativeapp.data.model.CookedCopraStockSummary
+import com.hims.nativeapp.data.model.CompactProductRow
 import com.hims.nativeapp.data.model.CreateRefundRequest
 import com.hims.nativeapp.data.model.CancelSaleItemRequest
 import com.hims.nativeapp.data.model.DashboardData
@@ -19,6 +20,9 @@ import com.hims.nativeapp.data.model.InventoryMovement
 import com.hims.nativeapp.data.model.InventoryVariant
 import com.hims.nativeapp.data.model.LoginData
 import com.hims.nativeapp.data.model.LoginRequest
+import com.hims.nativeapp.data.model.OutboxSaleCreateRequest
+import com.hims.nativeapp.data.model.OutboxStockMovementCreateRequest
+import com.hims.nativeapp.data.model.OutboxWriteAck
 import com.hims.nativeapp.data.model.PaginatedData
 import com.hims.nativeapp.data.model.PinRequest
 import com.hims.nativeapp.data.model.PosCheckoutData
@@ -35,16 +39,21 @@ import com.hims.nativeapp.data.model.Sale
 import com.hims.nativeapp.data.model.SalePayment
 import com.hims.nativeapp.data.model.SaleReceiptData
 import com.hims.nativeapp.data.model.SalesReportData
+import com.hims.nativeapp.data.model.SimplePaginatedData
 import com.hims.nativeapp.data.model.StockInRequest
+import com.hims.nativeapp.data.model.TransactionRow
 import com.hims.nativeapp.data.model.User
 import com.hims.nativeapp.data.model.VoidSaleRequest
 import com.hims.nativeapp.data.model.WeighLandingData
 import com.hims.nativeapp.data.model.WeighBatchStoreRequest
+import com.hims.nativeapp.data.model.BootstrapResponse
 import com.hims.nativeapp.data.model.WeighInPrice
 import com.hims.nativeapp.data.model.WeighPriceUpdateRequest
 import com.hims.nativeapp.data.model.WeighInTransaction
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -56,6 +65,12 @@ interface ApiService {
 
     @GET("api/auth/user")
     suspend fun getAuthenticatedUser(): ApiEnvelope<User>
+
+    @GET("api/bootstrap")
+    suspend fun getBootstrap(
+        @Header("If-None-Match") ifNoneMatch: String? = null,
+        @Header("If-Modified-Since") ifModifiedSince: String? = null,
+    ): Response<BootstrapResponse>
 
     @GET("api/pos/products")
     suspend fun getPosProducts(
@@ -72,6 +87,15 @@ interface ApiService {
         @Query("category_id") categoryId: Int? = null,
         @Query("active_only") activeOnly: Boolean? = null,
     ): ApiEnvelope<PaginatedData<Product>>
+
+    @GET("api/products")
+    suspend fun getProductsPaged(
+        @Query("per_page") perPage: Int = 30,
+        @Query("search") search: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("compact") compact: Boolean = true,
+        @Query("active_only") activeOnly: Boolean? = true,
+    ): Response<ApiEnvelope<SimplePaginatedData<CompactProductRow>>>
 
     @POST("api/products")
     suspend fun createProduct(
@@ -131,6 +155,24 @@ interface ApiService {
     suspend fun getSale(
         @Path("saleId") saleId: Int,
     ): ApiEnvelope<Sale>
+
+    @POST("api/sales")
+    suspend fun createSaleFromOutbox(
+        @Body request: OutboxSaleCreateRequest,
+    ): Response<ApiEnvelope<OutboxWriteAck>>
+
+    @GET("api/transactions")
+    suspend fun getTransactionsPaged(
+        @Query("from") from: String,
+        @Query("to") to: String,
+        @Query("per_page") perPage: Int = 30,
+        @Query("page") page: Int = 1,
+    ): Response<ApiEnvelope<SimplePaginatedData<TransactionRow>>>
+
+    @POST("api/stock-movements")
+    suspend fun createStockMovementFromOutbox(
+        @Body request: OutboxStockMovementCreateRequest,
+    ): Response<ApiEnvelope<OutboxWriteAck>>
 
     @POST("api/sales/{saleId}/void")
     suspend fun voidSale(

@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 class Sale extends Model
 {
     protected $fillable = [
+        'branch_id',
+        'client_request_id',
         'sale_number',
         'sale_date',
         'customer_name',
@@ -30,6 +32,7 @@ class Sale extends Model
     ];
 
     protected $casts = [
+        'branch_id' => 'integer',
         'sale_date' => 'date',
         'subtotal' => 'decimal:2',
         'total' => 'decimal:2',

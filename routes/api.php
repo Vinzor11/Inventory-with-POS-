@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BootstrapController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CookedCopraSaleController;
 use App\Http\Controllers\Api\DashboardController;
@@ -13,6 +14,8 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RefundController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SaleController;
+use App\Http\Controllers\Api\StockMovementController;
+use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WeighInController;
 use App\Http\Controllers\Api\WeighInPriceController;
@@ -37,6 +40,8 @@ Route::name('api.')->group(function () {
 
     // Protected routes (require Sanctum token)
     Route::middleware(['auth:sanctum', EnsureUserIsActive::class])->group(function () {
+        Route::get('/bootstrap', BootstrapController::class);
+
         // Authentication
         Route::get('/auth/user', [AuthController::class, 'user']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -66,7 +71,9 @@ Route::name('api.')->group(function () {
         Route::patch('/products/{product}/toggle-active', [ProductController::class, 'toggleActive']);
 
         // Sales
+        Route::post('/sales', [SaleController::class, 'store']);
         Route::apiResource('sales', SaleController::class)->only(['index', 'show']);
+        Route::get('/transactions', [TransactionController::class, 'index']);
         Route::post('/sales/{sale}/void', [SaleController::class, 'void']);
         Route::post('/sales/{sale}/cancel-item', [SaleController::class, 'cancelItem']);
 
@@ -87,6 +94,7 @@ Route::name('api.')->group(function () {
         Route::post('/inventory/{variant}/adjust', [InventoryController::class, 'adjust']);
         Route::post('/inventory/{variant}/set-initial', [InventoryController::class, 'setInitialStock']);
         Route::post('/inventory/stock-in', [InventoryController::class, 'stockIn']);
+        Route::post('/stock-movements', [StockMovementController::class, 'store']);
 
         // Production
         Route::get('/production/runs', [ProductionController::class, 'index']);

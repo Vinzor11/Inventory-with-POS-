@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.hims.nativeapp.data.local.AppDatabase
 import com.hims.nativeapp.data.model.AddDeliveryRequest
 import com.hims.nativeapp.data.model.AddPaymentRequest
 import com.hims.nativeapp.data.model.CancelSaleItemRequest
@@ -17,10 +19,14 @@ import com.hims.nativeapp.data.model.DeliveryItem
 import com.hims.nativeapp.data.model.DeliverySale
 import com.hims.nativeapp.data.model.InventoryAdjustRequest
 import com.hims.nativeapp.data.model.LoginRequest
+import com.hims.nativeapp.data.model.OutboxSaleCreateRequest
+import com.hims.nativeapp.data.model.OutboxSaleItemRequest
+import com.hims.nativeapp.data.model.OutboxStockMovementCreateRequest
 import com.hims.nativeapp.data.model.PinRequest
 import com.hims.nativeapp.data.model.PosCheckoutItemRequest
 import com.hims.nativeapp.data.model.PosCheckoutRequest
 import com.hims.nativeapp.data.model.Product
+import com.hims.nativeapp.data.model.ProductCategory
 import com.hims.nativeapp.data.model.ProductUpsertRequest
 import com.hims.nativeapp.data.model.ProductVariant
 import com.hims.nativeapp.data.model.ProductVariantUpsertRequest
@@ -38,6 +44,12 @@ import com.hims.nativeapp.data.model.WeighPriceUpdateRequest
 import com.hims.nativeapp.data.model.WeighInTransaction
 import com.hims.nativeapp.data.network.ApiClient
 import com.hims.nativeapp.data.network.SessionStore
+import com.hims.nativeapp.data.repository.BootstrapSnapshot
+import com.hims.nativeapp.data.repository.BootstrapRepository
+import com.hims.nativeapp.data.repository.OutboxEventTypes
+import com.hims.nativeapp.data.repository.OutboxRepository
+import com.hims.nativeapp.startup.StartupCoordinator
+import com.hims.nativeapp.startup.StartupState
 import com.hims.nativeapp.ui.AppTab
 import com.hims.nativeapp.ui.AppUiState
 import com.hims.nativeapp.ui.DeliveryCartItem
@@ -46,6 +58,8 @@ import com.hims.nativeapp.ui.WeighDraftItem
 import com.hims.nativeapp.ui.WeighCartItem
 import com.hims.nativeapp.util.formatQty
 import kotlinx.coroutines.launch
+import java.io.IOException
+import java.util.UUID
 import org.json.JSONObject
 import retrofit2.HttpException
 
@@ -54,6 +68,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sessionStore = SessionStore(application)
     private val api = ApiClient.create(sessionStore)
+    private val gson = Gson()
+    private val cacheDb = AppDatabase.getInstance(application)
+    private val bootstrapRepository = BootstrapRepository(api, cacheDb, gson)
+    private val outboxRepository = OutboxRepository(api, cacheDb, gson)
+    private val startupCoordinator = StartupCoordinator(sessionStore, bootstrapRepository)
+    private var startupCollectorAttached = false
 
     var uiState by mutableStateOf(
         AppUiState(
@@ -66,8 +86,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         if (uiState.isAuthenticated) {
-            refreshAll(initial = true)
+            attachStartupCoordinator()
         }
+    }
+
+    private fun attachStartupCoordinator() {
+        if (startupCollectorAttached) {
+            return
+        }
+
+        startupCollectorAttached = true
+
+        viewModelScope.launch {
+            startupCoordinator.state.collect { state ->
+                when (state) {
+                    StartupState.Loading -> {
+                        uiState =
+                            uiState.copy(
+                                isLoading = uiState.products.isEmpty(),
+                            )
+                    }
+
+                    StartupState.NeedsLogin -> {
+                        logout()
+                    }
+
+                    is StartupState.Ready -> {
+                        applyBootstrapSnapshot(
+                            snapshot = state.snapshot,
+                            offline = false,
+                        )
+                    }
+
+                    is StartupState.OfflineReady -> {
+                        applyBootstrapSnapshot(
+                            snapshot = state.snapshot,
+                            offline = true,
+                        )
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            startupCoordinator.refreshing.collect { refreshing ->
+                uiState = uiState.copy(isRefreshing = refreshing)
+            }
+        }
+
+        viewModelScope.launch {
+            startupCoordinator.ensureStarted()
+        }
+    }
+
+    private fun applyBootstrapSnapshot(
+        snapshot: BootstrapSnapshot,
+        offline: Boolean,
+    ) {
+        val role = canonicalizeRole(snapshot.state.userRole)
+        val token = sessionStore.getToken()
+        if (!token.isNullOrBlank()) {
+            sessionStore.saveSession(token, snapshot.state.userName, role)
+        }
+
+        val cachedCategories =
+            snapshot.categories.map {
+                ProductCategory(
+                    id = it.id,
+                    name = it.name,
+                )
+            }
+
+        val offlineMessage =
+            if (offline) {
+                "Offline mode: showing last cached data."
+            } else {
+                null
+            }
+
+        uiState =
+            uiState.copy(
+                isLoading = false,
+                isOfflineMode = offline,
+                userName = snapshot.state.userName,
+                userRole = role,
+                products = snapshot.posSeed,
+                inventoryCategories = cachedCategories,
+                errorMessage = offlineMessage,
+            )
     }
 
     fun updateSearch(value: String) {
@@ -188,7 +294,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         userName = response.data.user.name,
                         userRole = canonicalRole,
                     )
-                refreshAll(initial = true)
+                attachStartupCoordinator()
+                startupCoordinator.refresh(force = true)
             } catch (e: Exception) {
                 uiState = uiState.copy(isLoading = false, errorMessage = networkErrorMessage(e))
             }
@@ -202,7 +309,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshCurrentTab() {
         when (uiState.selectedTab) {
-            AppTab.POS -> refreshPos()
+            AppTab.POS -> refreshStartup(force = true)
             AppTab.DELIVERY -> refreshDeliveries()
             AppTab.SALES -> refreshSales()
             AppTab.WEIGH -> refreshWeighIns()
@@ -215,6 +322,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppTab.MORE -> {
                 refreshAll()
             }
+        }
+    }
+
+    fun refreshStartup(force: Boolean = true) {
+        viewModelScope.launch {
+            startupCoordinator.refresh(force = force)
         }
     }
 
@@ -387,11 +500,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshPos()
                 onSuccess()
             } catch (e: Exception) {
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        errorMessage = networkErrorMessage(e),
+                if (isOfflineQueueableError(e)) {
+                    val payload =
+                        OutboxStockMovementCreateRequest(
+                            clientRequestId = UUID.randomUUID().toString(),
+                            productVariantId = variantId,
+                            movementType = "IN",
+                            qty = quantity.toDouble(),
+                            reason = "stock_in",
+                            notes = notes.ifBlank { null },
+                            unitCost = unitCost,
+                        )
+                    outboxRepository.enqueueEvent(
+                        type = OutboxEventTypes.STOCK_MOVEMENT_CREATE,
+                        payloadJson = gson.toJson(payload),
                     )
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            isOfflineMode = true,
+                            successMessage = "No connection. Stock-in queued and will sync automatically.",
+                        )
+                } else {
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            errorMessage = networkErrorMessage(e),
+                        )
+                }
             }
         }
     }
@@ -444,11 +580,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshPos()
                 onSuccess()
             } catch (e: Exception) {
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        errorMessage = networkErrorMessage(e),
+                if (isOfflineQueueableError(e)) {
+                    val payload =
+                        OutboxStockMovementCreateRequest(
+                            clientRequestId = UUID.randomUUID().toString(),
+                            productVariantId = variantId,
+                            movementType = normalizedType,
+                            qty = quantity.toDouble(),
+                            reason = normalizedReason,
+                            notes = notes.ifBlank { null },
+                            unitCost = null,
+                        )
+                    outboxRepository.enqueueEvent(
+                        type = OutboxEventTypes.STOCK_MOVEMENT_CREATE,
+                        payloadJson = gson.toJson(payload),
                     )
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            isOfflineMode = true,
+                            successMessage = "No connection. Inventory adjustment queued for sync.",
+                        )
+                } else {
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            errorMessage = networkErrorMessage(e),
+                        )
+                }
             }
         }
     }
@@ -1271,11 +1430,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshAll()
                 onSuccess(response.data.sale.id)
             } catch (e: Exception) {
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        errorMessage = networkErrorMessage(e),
+                if (isOfflineQueueableError(e)) {
+                    val outboxRequest =
+                        OutboxSaleCreateRequest(
+                            clientRequestId = UUID.randomUUID().toString(),
+                            items =
+                                uiState.posCartItems.map {
+                                    OutboxSaleItemRequest(
+                                        productVariantId = it.variantId,
+                                        quantity = maxOf(0.01, it.quantity),
+                                        unitPrice = it.unitPrice,
+                                    )
+                                },
+                            paymentAmount = maxOf(0.0, paymentAmount),
+                            paymentMethod = paymentMethod,
+                            isForDelivery = isForDelivery,
+                            deliveryName = if (isForDelivery) deliveryName.trim().ifBlank { null } else null,
+                            deliveryAddress = if (isForDelivery) deliveryAddress.trim().ifBlank { null } else null,
+                            deliveryContact = if (isForDelivery) deliveryContact.trim().ifBlank { null } else null,
+                            notes = notes.trim().ifBlank { null },
+                        )
+
+                    outboxRepository.enqueueEvent(
+                        type = OutboxEventTypes.SALE_CREATE,
+                        payloadJson = gson.toJson(outboxRequest),
                     )
+
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            isOfflineMode = true,
+                            posCartItems = emptyList(),
+                            successMessage = "No connection. Sale queued and will sync automatically.",
+                        )
+                    onSuccess(-1)
+                } else {
+                    uiState =
+                        uiState.copy(
+                            isActionLoading = false,
+                            errorMessage = networkErrorMessage(e),
+                        )
+                }
             }
         }
     }
@@ -2525,6 +2720,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val reserved = variant.reservedForDelivery ?: 0.0
         val availableFromApi = variant.availableQuantity
         return (availableFromApi ?: (stock - reserved)).coerceAtLeast(0.0)
+    }
+
+    private fun isOfflineQueueableError(e: Exception): Boolean {
+        if (e is IOException) {
+            return true
+        }
+
+        if (e is HttpException) {
+            return e.code() in 500..599 || e.code() == 408 || e.code() == 429
+        }
+
+        return false
     }
 
     private fun isUnauthorized(e: Exception): Boolean {

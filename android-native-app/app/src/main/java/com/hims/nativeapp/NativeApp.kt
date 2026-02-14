@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -270,12 +272,14 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                                 deliveryContact = deliveryContact,
                                 onSuccess = { saleId ->
                                     onSuccess()
-                                    viewModel.fetchSaleReceiptText(saleId) { receiptText ->
-                                        sharePlainText(
-                                            context = context,
-                                            title = "Share Sale Receipt",
-                                            text = receiptText,
-                                        )
+                                    if (saleId > 0) {
+                                        viewModel.fetchSaleReceiptText(saleId) { receiptText ->
+                                            sharePlainText(
+                                                context = context,
+                                                title = "Share Sale Receipt",
+                                                text = receiptText,
+                                            )
+                                        }
                                     }
                                 },
                             )
@@ -569,6 +573,19 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         )
                     }
                 }
+            }
+
+            if (state.isOfflineMode) {
+                Text(
+                    text = "OFFLINE",
+                    color = Color.White,
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 10.dp, end = 10.dp)
+                            .background(Color(0xFFB00020), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
             }
 
             PullRefreshIndicator(

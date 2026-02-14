@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 val apiBaseUrl = (findProperty("API_BASE_URL") as String?) ?: "http://10.0.2.2:8000/"
@@ -79,6 +80,13 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.room:room-paging:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.paging:paging-runtime-ktx:3.3.6")
+    implementation("androidx.paging:paging-compose:3.3.6")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

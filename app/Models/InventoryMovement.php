@@ -10,6 +10,8 @@ class InventoryMovement extends Model
     protected $table = 'inventory_movements';
 
     protected $fillable = [
+        'branch_id',
+        'client_request_id',
         'product_variant_id',
         'product_id',
         'quantity',
@@ -27,6 +29,7 @@ class InventoryMovement extends Model
     ];
 
     protected $casts = [
+        'branch_id' => 'integer',
         'quantity' => 'decimal:4',
         'qty' => 'decimal:4',
         'unit_cost' => 'decimal:4',

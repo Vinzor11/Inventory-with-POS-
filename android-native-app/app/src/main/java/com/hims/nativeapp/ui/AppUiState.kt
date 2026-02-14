@@ -61,6 +61,7 @@ data class AppUiState(
     val isAuthenticated: Boolean = false,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    val isOfflineMode: Boolean = false,
     val errorMessage: String? = null,
     val deactivationMessage: String? = null,
     val successMessage: String? = null,
