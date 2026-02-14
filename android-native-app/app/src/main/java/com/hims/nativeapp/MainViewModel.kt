@@ -124,6 +124,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             offline = true,
                         )
                     }
+
+                    is StartupState.Failed -> {
+                        uiState =
+                            uiState.copy(
+                                isLoading = false,
+                                isOfflineMode = false,
+                                errorMessage = state.message,
+                            )
+                    }
                 }
             }
         }

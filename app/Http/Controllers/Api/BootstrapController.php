@@ -10,11 +10,13 @@ use App\Models\WeighInPrice;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BootstrapController extends Controller
 {
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request): JsonResponse|Response
     {
         $user = $request->user();
         $normalizedRole = $this->normalizeRole($user->role);
@@ -130,8 +132,12 @@ class BootstrapController extends Controller
 
     private function loadUomLookups(): array
     {
+        $unitExpr = Schema::hasColumn('products', 'official_stock_unit')
+            ? "DISTINCT COALESCE(NULLIF(TRIM(official_stock_unit), ''), NULLIF(TRIM(base_unit), ''), 'pcs') as unit_code"
+            : "DISTINCT COALESCE(NULLIF(TRIM(base_unit), ''), 'pcs') as unit_code";
+
         $codes = Product::query()
-            ->selectRaw("DISTINCT COALESCE(NULLIF(TRIM(official_stock_unit), ''), NULLIF(TRIM(base_unit), ''), 'pcs') as unit_code")
+            ->selectRaw($unitExpr)
             ->whereNotNull('base_unit')
             ->orderBy('unit_code')
             ->pluck('unit_code')
@@ -151,36 +157,41 @@ class BootstrapController extends Controller
 
     private function loadPosSeed(int $limit): array
     {
+        $productSelect = array_values(array_filter([
+            'id',
+            'category_id',
+            'name',
+            Schema::hasColumn('products', 'brand') ? 'brand' : null,
+            'sku',
+            Schema::hasColumn('products', 'image') ? 'image' : null,
+            'base_unit',
+            'track_stock',
+            'is_active',
+            'updated_at',
+        ]));
+
+        $variantSelect = array_values(array_filter([
+            'id',
+            'product_id',
+            'description',
+            'unit_price',
+            'pending_unit_price',
+            'pending_price_quantity',
+            Schema::hasColumn('product_variants', 'cost_price') ? 'cost_price' : null,
+            Schema::hasColumn('product_variants', 'purchase_price') ? 'purchase_price' : null,
+        ]));
+
         $seedProducts = Product::query()
             ->where('is_active', true)
             ->whereHas('category', fn ($q) => $q->where('name', '!=', 'Agricultural Products'))
             ->with([
                 'category:id,name',
-                'variants' => function ($q): void {
-                    $q->select([
-                        'id',
-                        'product_id',
-                        'description',
-                        'unit_price',
-                        'pending_unit_price',
-                        'pending_price_quantity',
-                        'cost_price',
-                        'purchase_price',
-                    ])->with('inventory:product_variant_id,quantity_on_hand');
+                'variants' => function ($q) use ($variantSelect): void {
+                    $q->select($variantSelect)
+                        ->with('inventory:product_variant_id,quantity_on_hand');
                 },
             ])
-            ->select([
-                'id',
-                'category_id',
-                'name',
-                'brand',
-                'sku',
-                'image',
-                'base_unit',
-                'track_stock',
-                'is_active',
-                'updated_at',
-            ])
+            ->select($productSelect)
             ->orderByDesc('updated_at')
             ->limit(max(1, $limit))
             ->get();
@@ -205,6 +216,14 @@ class BootstrapController extends Controller
                         'name' => $product->category->name,
                     ] : null,
                     'variants' => $product->variants->map(function (ProductVariant $variant) use ($reservedByVariant): array {
+                        $attrs = $variant->getAttributes();
+                        $costPrice = null;
+                        if (array_key_exists('cost_price', $attrs) && $attrs['cost_price'] !== null) {
+                            $costPrice = (float) $attrs['cost_price'];
+                        } elseif (array_key_exists('purchase_price', $attrs) && $attrs['purchase_price'] !== null) {
+                            $costPrice = (float) $attrs['purchase_price'];
+                        }
+
                         $stock = (float) ($variant->inventory->quantity_on_hand ?? 0);
                         $reserved = (float) ($reservedByVariant[$variant->id] ?? 0);
                         return [
@@ -214,7 +233,7 @@ class BootstrapController extends Controller
                             'unit_price' => (float) $variant->unit_price,
                             'pending_unit_price' => $variant->pending_unit_price !== null ? (float) $variant->pending_unit_price : null,
                             'pending_price_quantity' => $variant->pending_price_quantity !== null ? (float) $variant->pending_price_quantity : null,
-                            'cost_price' => $variant->cost_price !== null ? (float) $variant->cost_price : null,
+                            'cost_price' => $costPrice,
                             'reserved_for_delivery' => $reserved,
                             'available_quantity' => max(0, $stock - $reserved),
                             'inventory' => [

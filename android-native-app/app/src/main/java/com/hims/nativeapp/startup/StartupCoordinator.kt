@@ -16,6 +16,7 @@ sealed interface StartupState {
     data object NeedsLogin : StartupState
     data class Ready(val snapshot: BootstrapSnapshot) : StartupState
     data class OfflineReady(val snapshot: BootstrapSnapshot) : StartupState
+    data class Failed(val message: String) : StartupState
 }
 
 class StartupCoordinator(
@@ -74,7 +75,9 @@ class StartupCoordinator(
                     if (latest != null) {
                         _state.value = StartupState.Ready(latest)
                     } else {
-                        _state.value = StartupState.Loading
+                        _state.value = StartupState.Failed(
+                            "Startup data is unavailable. Pull to refresh when server is reachable.",
+                        )
                     }
                 }
 
@@ -87,7 +90,13 @@ class StartupCoordinator(
                     if (fallback != null) {
                         _state.value = StartupState.OfflineReady(fallback)
                     } else {
-                        _state.value = StartupState.Loading
+                        _state.value = StartupState.Failed(
+                            if (result.retryable) {
+                                "Cannot reach server right now. Pull to refresh to retry."
+                            } else {
+                                "Startup failed due to a server error. Pull to refresh."
+                            },
+                        )
                     }
                 }
             }
