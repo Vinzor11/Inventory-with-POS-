@@ -2165,7 +2165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val products = api.getPosProducts().data
-                val inventoryCategories = api.getPosCategories().data
+                var inventoryCategories = api.getPosCategories().data
                 val inventoryVariants =
                     api.getInventory(
                         categoryId = uiState.inventoryCategoryFilter,
