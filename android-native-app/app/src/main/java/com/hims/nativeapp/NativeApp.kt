@@ -54,8 +54,8 @@ import com.hims.nativeapp.ui.screens.LoginScreen
 import com.hims.nativeapp.ui.screens.MoreMenuSheetContent
 import com.hims.nativeapp.ui.screens.MoreScreen
 import com.hims.nativeapp.ui.screens.PosScreen
+import com.hims.nativeapp.ui.screens.ProductMenuScreen
 import com.hims.nativeapp.ui.screens.ProductionMenuScreen
-import com.hims.nativeapp.ui.screens.ProductsPagingScreen
 import com.hims.nativeapp.ui.screens.SalesScreen
 import com.hims.nativeapp.ui.screens.SalesReportScreen
 import com.hims.nativeapp.ui.screens.WeighMenuScreen
@@ -449,10 +449,20 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                     )
                 }
                 AppTab.PRODUCT_MENU -> {
-                    ProductsPagingScreen(
+                    ProductMenuScreen(
+                        products = state.productMenuItems,
+                        categories = state.inventoryCategories,
                         searchQuery = state.searchQuery,
                         selectedCategoryId = state.productCategoryFilter,
                         activeFilter = state.productActiveFilter,
+                        isActionLoading = state.isActionLoading,
+                        onCreateProduct = viewModel::createProduct,
+                        onUpdateProduct = viewModel::updateProduct,
+                        onToggleStock = viewModel::toggleProductStock,
+                        onToggleActive = viewModel::toggleProductActive,
+                        onAddVariant = viewModel::addProductVariant,
+                        onUpdateVariant = viewModel::updateProductVariant,
+                        onFullscreenModeChange = { isFullscreenMode = it },
                     )
                 }
                 AppTab.WEIGH_MENU -> {
