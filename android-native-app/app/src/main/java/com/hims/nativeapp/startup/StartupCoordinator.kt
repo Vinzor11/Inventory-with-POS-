@@ -50,13 +50,17 @@ class StartupCoordinator(
     }
 
     private suspend fun run(force: Boolean) {
+        val cached = bootstrapRepository.currentSnapshot()
         val token = sessionStore.getToken()
         if (token.isNullOrBlank()) {
-            _state.value = StartupState.NeedsLogin
+            if (cached != null) {
+                _state.value = StartupState.OfflineReady(cached)
+            } else {
+                _state.value = StartupState.NeedsLogin
+            }
             return
         }
 
-        val cached = bootstrapRepository.currentSnapshot()
         if (cached != null) {
             _state.value = StartupState.Ready(cached)
         } else {
@@ -82,7 +86,12 @@ class StartupCoordinator(
                 }
 
                 BootstrapRefreshResult.Unauthorized -> {
-                    _state.value = StartupState.NeedsLogin
+                    val fallback = bootstrapRepository.currentSnapshot()
+                    if (fallback != null) {
+                        _state.value = StartupState.OfflineReady(fallback)
+                    } else {
+                        _state.value = StartupState.NeedsLogin
+                    }
                 }
 
                 is BootstrapRefreshResult.NetworkError -> {

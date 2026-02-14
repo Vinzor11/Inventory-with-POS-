@@ -119,7 +119,7 @@ class SaleController extends Controller
         $validated = $request->validate([
             'client_request_id' => ['required', 'uuid'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
+            'items.*.product_variant_id' => ['required', 'integer'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'payment_amount' => ['nullable', 'numeric', 'min:0'],

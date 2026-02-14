@@ -62,7 +62,6 @@ class BootstrapRepository(
         return try {
             val response = api.getBootstrap(
                 ifNoneMatch = meta?.etag,
-                ifModifiedSince = meta?.lastModified,
             )
 
             when (response.code()) {

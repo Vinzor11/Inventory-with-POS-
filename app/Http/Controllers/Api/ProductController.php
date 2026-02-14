@@ -21,13 +21,15 @@ class ProductController extends Controller
             'search' => ['nullable', 'string', 'max:80'],
             'category_id' => ['nullable', 'integer'],
             'active_only' => ['nullable', 'boolean'],
+            'active_filter' => ['nullable', 'in:all,active,inactive'],
             'compact' => ['nullable', 'boolean'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 30);
         $search = $validated['search'] ?? null;
         $categoryId = $validated['category_id'] ?? null;
-        $activeOnly = (bool) ($validated['active_only'] ?? false);
+        $activeOnly = $request->boolean('active_only');
+        $activeFilter = strtolower((string) ($validated['active_filter'] ?? ($activeOnly ? 'active' : 'all')));
         $compact = (bool) ($validated['compact'] ?? false);
 
         if ($compact) {
@@ -65,8 +67,10 @@ class ProductController extends Controller
                 $query->where('products.category_id', $categoryId);
             }
 
-            if ($activeOnly) {
+            if ($activeFilter === 'active') {
                 $query->where('products.is_active', true);
+            } elseif ($activeFilter === 'inactive') {
+                $query->where('products.is_active', false);
             }
 
             $page = $query->simplePaginate($perPage)->appends($request->query());
@@ -91,8 +95,10 @@ class ProductController extends Controller
             $query->where('category_id', $categoryId);
         }
 
-        if ($activeOnly) {
+        if ($activeFilter === 'active') {
             $query->where('is_active', true);
+        } elseif ($activeFilter === 'inactive') {
+            $query->where('is_active', false);
         }
 
         $products = $query->paginate($perPage)->appends($request->query());

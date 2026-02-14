@@ -20,8 +20,12 @@ class ProductsRepository(
     private val db: AppDatabase,
 ) {
     @OptIn(ExperimentalPagingApi::class)
-    fun paged(search: String): Flow<PagingData<ProductPagedEntity>> {
-        val normalizedSearch = normalizeSearch(search)
+    fun paged(
+        search: String,
+        categoryId: Int?,
+        activeFilter: String,
+    ): Flow<PagingData<ProductPagedEntity>> {
+        val query = buildQuery(search = search, categoryId = categoryId, activeFilter = activeFilter)
 
         return Pager(
             config = PagingConfig(
@@ -31,12 +35,12 @@ class ProductsRepository(
                 enablePlaceholders = false,
             ),
             remoteMediator = ProductsRemoteMediator(
-                searchKey = normalizedSearch,
+                query = query,
                 api = api,
                 db = db,
             ),
             pagingSourceFactory = {
-                db.productsPagingDao().pagingSource(normalizedSearch)
+                db.productsPagingDao().pagingSource(query.cacheKey)
             },
         ).flow
     }
@@ -46,20 +50,54 @@ class ProductsRepository(
         return if (value.isBlank()) ALL_SEARCH_KEY else value
     }
 
+    private fun normalizeActiveFilter(raw: String): String {
+        return when (raw.trim().lowercase()) {
+            "active" -> "active"
+            "inactive" -> "inactive"
+            else -> "all"
+        }
+    }
+
+    private fun buildQuery(
+        search: String,
+        categoryId: Int?,
+        activeFilter: String,
+    ): ProductQuery {
+        val normalizedSearch = normalizeSearch(search)
+        val normalizedActive = normalizeActiveFilter(activeFilter)
+        val categoryPart = categoryId?.toString() ?: ALL_CATEGORY_KEY
+        val cacheKey = "q=$normalizedSearch|cat=$categoryPart|act=$normalizedActive"
+
+        return ProductQuery(
+            cacheKey = cacheKey,
+            apiSearch = if (normalizedSearch == ALL_SEARCH_KEY) null else normalizedSearch,
+            categoryId = categoryId,
+            activeFilter = if (normalizedActive == "all") null else normalizedActive,
+        )
+    }
+
     companion object {
         private const val ALL_SEARCH_KEY = "__all__"
+        private const val ALL_CATEGORY_KEY = "__all__"
         private const val DEFAULT_PAGE_SIZE = 30
         private const val QUERY_TTL_MS = 15L * 60L * 1000L
     }
 
+    private data class ProductQuery(
+        val cacheKey: String,
+        val apiSearch: String?,
+        val categoryId: Int?,
+        val activeFilter: String?,
+    )
+
     @OptIn(ExperimentalPagingApi::class)
     private class ProductsRemoteMediator(
-        private val searchKey: String,
+        private val query: ProductQuery,
         private val api: ApiService,
         private val db: AppDatabase,
     ) : RemoteMediator<Int, ProductPagedEntity>() {
         override suspend fun initialize(): RemoteMediator.InitializeAction {
-            val key = db.productRemoteKeyDao().get(searchKey)
+            val key = db.productRemoteKeyDao().get(query.cacheKey)
             val stale = key == null || (System.currentTimeMillis() - key.syncedAtEpochMs) > QUERY_TTL_MS
             return if (stale) {
                 RemoteMediator.InitializeAction.LAUNCH_INITIAL_REFRESH
@@ -76,20 +114,21 @@ class ProductsRepository(
                 LoadType.REFRESH -> 1
                 LoadType.PREPEND -> return RemoteMediator.MediatorResult.Success(endOfPaginationReached = true)
                 LoadType.APPEND -> {
-                    val key = db.productRemoteKeyDao().get(searchKey)
+                    val key = db.productRemoteKeyDao().get(query.cacheKey)
                     key?.nextPage
                         ?: return RemoteMediator.MediatorResult.Success(endOfPaginationReached = true)
                 }
             }
 
             return try {
-                val searchParam = if (searchKey == ALL_SEARCH_KEY) null else searchKey
                 val response = api.getProductsPaged(
                     perPage = state.config.pageSize,
-                    search = searchParam,
+                    search = query.apiSearch,
+                    categoryId = query.categoryId,
+                    activeFilter = query.activeFilter,
                     page = page,
                     compact = true,
-                    activeOnly = true,
+                    activeOnly = query.activeFilter == "active",
                 )
 
                 if (!response.isSuccessful || response.body() == null) {
@@ -105,7 +144,7 @@ class ProductsRepository(
 
                 val mappedRows = pageData.data.map {
                     ProductPagedEntity(
-                        searchKey = searchKey,
+                        searchKey = query.cacheKey,
                         variantId = it.id,
                         productId = it.productId,
                         name = it.productName,
@@ -122,14 +161,14 @@ class ProductsRepository(
 
                 db.withTransaction {
                     if (loadType == LoadType.REFRESH) {
-                        db.productsPagingDao().clearBySearchKey(searchKey)
-                        db.productRemoteKeyDao().delete(searchKey)
+                        db.productsPagingDao().clearBySearchKey(query.cacheKey)
+                        db.productRemoteKeyDao().delete(query.cacheKey)
                     }
 
                     db.productsPagingDao().upsertAll(mappedRows)
                     db.productRemoteKeyDao().upsert(
                         ProductRemoteKeyEntity(
-                            searchKey = searchKey,
+                            searchKey = query.cacheKey,
                             nextPage = if (endReached) null else pageData.currentPage + 1,
                             syncedAtEpochMs = now,
                         ),

@@ -17,7 +17,7 @@ class StockMovementController extends Controller
     {
         $validated = $request->validate([
             'client_request_id' => ['required', 'uuid'],
-            'product_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
+            'product_variant_id' => ['required', 'integer'],
             'movement_type' => ['required', 'string', 'in:IN,OUT,in,out'],
             'qty' => ['required', 'numeric', 'gt:0'],
             'reason' => ['nullable', 'string', 'max:50'],
@@ -45,7 +45,10 @@ class StockMovementController extends Controller
                 $variant = ProductVariant::query()
                     ->with('inventory')
                     ->lockForUpdate()
-                    ->findOrFail((int) $validated['product_variant_id']);
+                    ->find((int) $validated['product_variant_id']);
+                if (!$variant) {
+                    abort(422, 'Invalid product variant.');
+                }
 
                 $movementType = strtoupper($validated['movement_type']);
                 $quantity = (float) $validated['qty'];

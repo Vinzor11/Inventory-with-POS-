@@ -69,7 +69,6 @@ interface ApiService {
     @GET("api/bootstrap")
     suspend fun getBootstrap(
         @Header("If-None-Match") ifNoneMatch: String? = null,
-        @Header("If-Modified-Since") ifModifiedSince: String? = null,
     ): Response<BootstrapResponse>
 
     @GET("api/pos/products")
@@ -92,6 +91,8 @@ interface ApiService {
     suspend fun getProductsPaged(
         @Query("per_page") perPage: Int = 30,
         @Query("search") search: String? = null,
+        @Query("category_id") categoryId: Int? = null,
+        @Query("active_filter") activeFilter: String? = null,
         @Query("page") page: Int = 1,
         @Query("compact") compact: Boolean = true,
         @Query("active_only") activeOnly: Boolean? = true,

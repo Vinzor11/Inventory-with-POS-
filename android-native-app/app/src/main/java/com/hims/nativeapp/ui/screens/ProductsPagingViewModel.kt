@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class ProductsPagingViewModel(application: Application) : AndroidViewModel(application) {
@@ -23,12 +22,36 @@ class ProductsPagingViewModel(application: Application) : AndroidViewModel(appli
     private val db = AppDatabase.getInstance(application)
     private val repository = ProductsRepository(api, db)
 
-    val query = MutableStateFlow("")
+    private data class ProductsPagingQuery(
+        val search: String = "",
+        val categoryId: Int? = null,
+        val activeFilter: String = "all",
+    )
+
+    private val query = MutableStateFlow(ProductsPagingQuery())
 
     val products = query
         .debounce(300)
-        .map { it.trim() }
         .distinctUntilChanged()
-        .flatMapLatest { repository.paged(it) }
+        .flatMapLatest {
+            repository.paged(
+                search = it.search,
+                categoryId = it.categoryId,
+                activeFilter = it.activeFilter,
+            )
+        }
         .cachedIn(viewModelScope)
+
+    fun updateFilters(
+        search: String,
+        categoryId: Int?,
+        activeFilter: String,
+    ) {
+        query.value =
+            ProductsPagingQuery(
+                search = search.trim(),
+                categoryId = categoryId,
+                activeFilter = activeFilter,
+            )
+    }
 }
