@@ -153,7 +153,7 @@ class ProductsRepository(
                         categoryName = it.categoryName,
                         unitPrice = it.unitPrice,
                         availableQuantity = it.quantityOnHand ?: 0.0,
-                        isActive = it.isActive,
+                        isActive = it.isActive == 1,
                     )
                 }
 

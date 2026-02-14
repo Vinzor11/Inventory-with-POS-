@@ -893,7 +893,7 @@ data class CompactProductRow(
     @SerializedName("quantity_on_hand")
     val quantityOnHand: Double? = null,
     @SerializedName("is_active")
-    val isActive: Boolean = true,
+    val isActive: Int = 1,
 )
 
 data class TransactionRow(
