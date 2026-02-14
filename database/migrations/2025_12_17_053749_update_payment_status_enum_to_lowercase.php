@@ -18,8 +18,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Step 1: Convert payment_status to VARCHAR temporarily
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'unpaid'");
+        }
         
         // Step 2: Map uppercase values to lowercase values
         // Note: PARTIALLY_PAID will be mapped to 'partial', but updatePaymentStatus() 
@@ -33,7 +37,9 @@ return new class extends Migration
         END");
 
         // Step 3: Convert back to ENUM with lowercase values
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        }
     }
 
     /**
@@ -41,8 +47,12 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Convert back to uppercase
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'PARTIALLY_PAID'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'PARTIALLY_PAID'");
+        }
         
         DB::statement("UPDATE sales SET payment_status = CASE 
             WHEN payment_status = 'paid' THEN 'FULLY_PAID'
@@ -53,6 +63,8 @@ return new class extends Migration
             ELSE UPPER(payment_status)
         END");
 
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('FULLY_PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED') DEFAULT 'PARTIALLY_PAID'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('FULLY_PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED') DEFAULT 'PARTIALLY_PAID'");
+        }
     }
 };

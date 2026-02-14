@@ -490,7 +490,7 @@ class ProductSeeder extends Seeder
             'unit_price' => 400.00,
         ]);
 
-        $this->command->info('✓ Product seeder completed - ' . Product::count() . ' products created');
+        $this->outputInfo('Product seeder completed - ' . Product::count() . ' products created');
     }
 
     /**
@@ -563,6 +563,17 @@ class ProductSeeder extends Seeder
             ->where('name', '!=', 'Agricultural Products')
             ->delete();
 
-        $this->command->info('✓ Cleaned existing non-agricultural products');
+        $this->outputInfo('Cleaned existing non-agricultural products');
+    }
+
+    private function outputInfo(string $message): void
+    {
+        if ($this->command) {
+            $this->command->info($message);
+
+            return;
+        }
+
+        logger()->info($message);
     }
 }

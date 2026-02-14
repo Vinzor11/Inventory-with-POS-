@@ -16,11 +16,17 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Convert to VARCHAR temporarily to avoid case-sensitivity issues with ENUM
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20)");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20)");
+        }
 
         // Convert back to ENUM with new values including OPEN
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('OPEN', 'COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('OPEN', 'COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        }
     }
 
     /**
@@ -28,13 +34,19 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Convert to VARCHAR
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20)");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20)");
+        }
         
         // Map OPEN back to COMPLETED (or PARTIAL if needed)
         DB::statement("UPDATE sales SET status = 'COMPLETED' WHERE status = 'OPEN'");
 
         // Convert back to ENUM without OPEN
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        }
     }
 };

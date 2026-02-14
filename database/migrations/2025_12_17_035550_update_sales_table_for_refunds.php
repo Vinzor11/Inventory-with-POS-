@@ -19,16 +19,22 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Update status enum to include 'refunded'
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void', 'refunded') DEFAULT 'draft'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void', 'refunded') DEFAULT 'draft'");
+        }
         
         // Update payment_status enum to include refund statuses
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        }
         
         // Update delivery_status enum to include return/cancel statuses
-        Schema::table('sales', function (Blueprint $table) {
+        Schema::table('sales', function (Blueprint $table) use ($isSqlite) {
             // Check if column exists before modifying
-            if (Schema::hasColumn('sales', 'delivery_status')) {
+            if (!$isSqlite && Schema::hasColumn('sales', 'delivery_status')) {
                 DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('pending', 'partial', 'delivered', 'returned', 'canceled')");
             }
         });
@@ -39,14 +45,20 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Revert status enum
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void') DEFAULT 'draft'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void') DEFAULT 'draft'");
+        }
         
         // Revert payment_status enum
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid') DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid') DEFAULT 'unpaid'");
+        }
         
         // Revert delivery_status enum
-        if (Schema::hasColumn('sales', 'delivery_status')) {
+        if (!$isSqlite && Schema::hasColumn('sales', 'delivery_status')) {
             DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('pending', 'partial', 'delivered')");
         }
     }

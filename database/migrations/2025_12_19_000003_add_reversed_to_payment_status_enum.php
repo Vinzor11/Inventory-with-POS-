@@ -15,6 +15,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // MySQL doesn't support modifying enum directly, so we need to use raw SQL
         DB::statement("ALTER TABLE `sales` MODIFY COLUMN `payment_status` ENUM('UNPAID', 'PARTIALLY_PAID', 'FULLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'REVERSED') NOT NULL DEFAULT 'UNPAID'");
     }
@@ -24,6 +28,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Remove REVERSED from enum
         DB::statement("ALTER TABLE `sales` MODIFY COLUMN `payment_status` ENUM('UNPAID', 'PARTIALLY_PAID', 'FULLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED') NOT NULL DEFAULT 'UNPAID'");
     }

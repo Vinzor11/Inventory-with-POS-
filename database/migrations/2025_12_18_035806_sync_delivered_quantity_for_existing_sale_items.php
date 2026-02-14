@@ -17,6 +17,25 @@ return new class extends Migration
     {
         // Update delivered_quantity for each sale_item based on delivery_items
         // We need to sum all delivery_items quantities for each product_variant_id per sale
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement("
+                UPDATE sale_items
+                SET delivered_quantity = COALESCE(
+                    (
+                        SELECT SUM(di.quantity)
+                        FROM deliveries d
+                        LEFT JOIN delivery_items di
+                            ON di.delivery_id = d.id
+                            AND di.product_variant_id = sale_items.product_variant_id
+                        WHERE d.sale_id = sale_items.sale_id
+                    ),
+                    0
+                )
+            ");
+
+            return;
+        }
+
         DB::statement("
             UPDATE sale_items si
             INNER JOIN (

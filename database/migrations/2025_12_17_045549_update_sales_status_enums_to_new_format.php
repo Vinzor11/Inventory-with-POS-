@@ -23,9 +23,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Convert to VARCHAR temporarily to avoid case-sensitivity issues with ENUM
         // Step 1: Convert status to VARCHAR
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20) DEFAULT 'paid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status VARCHAR(20) DEFAULT 'paid'");
+        }
         
         // Step 2: Map old values to new values
         DB::statement("UPDATE sales SET status = CASE 
@@ -37,10 +41,14 @@ return new class extends Migration
         END");
 
         // Step 3: Convert back to ENUM with new values
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('COMPLETED', 'PARTIAL', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED') DEFAULT 'COMPLETED'");
+        }
         
         // Step 4: Convert payment_status to VARCHAR
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status VARCHAR(20) DEFAULT 'unpaid'");
+        }
         
         // Step 5: Map payment_status old values to new values
         DB::statement("UPDATE sales SET payment_status = CASE 
@@ -53,12 +61,16 @@ return new class extends Migration
         END");
 
         // Step 6: Convert back to ENUM with new values
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('FULLY_PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED') DEFAULT 'PARTIALLY_PAID'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('FULLY_PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED') DEFAULT 'PARTIALLY_PAID'");
+        }
         
         // Step 7: Update delivery_status if column exists
         if (Schema::hasColumn('sales', 'delivery_status')) {
             // Convert to VARCHAR
-            DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status VARCHAR(20)");
+            if (!$isSqlite) {
+                DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status VARCHAR(20)");
+            }
             
             // Map old values to new values
             DB::statement("UPDATE sales SET delivery_status = CASE 
@@ -71,7 +83,9 @@ return new class extends Migration
             END");
 
             // Convert back to ENUM with new values
-            DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('PENDING', 'PARTIAL', 'DELIVERED', 'RETURNED', 'CANCELED')");
+            if (!$isSqlite) {
+                DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('PENDING', 'PARTIAL', 'DELIVERED', 'RETURNED', 'CANCELED')");
+            }
         }
     }
 
@@ -80,6 +94,8 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $isSqlite = DB::getDriverName() === 'sqlite';
+
         // Revert to old format
         DB::statement("UPDATE sales SET status = CASE 
             WHEN status = 'COMPLETED' THEN 'paid'
@@ -90,7 +106,9 @@ return new class extends Migration
             ELSE status
         END");
 
-        DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void', 'refunded') DEFAULT 'draft'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN status ENUM('draft', 'paid', 'void', 'refunded') DEFAULT 'draft'");
+        }
         
         DB::statement("UPDATE sales SET payment_status = CASE 
             WHEN payment_status = 'FULLY_PAID' THEN 'paid'
@@ -100,7 +118,9 @@ return new class extends Migration
             ELSE payment_status
         END");
 
-        DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        if (!$isSqlite) {
+            DB::statement("ALTER TABLE sales MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'partially_refunded', 'refunded') DEFAULT 'unpaid'");
+        }
         
         if (Schema::hasColumn('sales', 'delivery_status')) {
             DB::statement("UPDATE sales SET delivery_status = CASE 
@@ -112,7 +132,9 @@ return new class extends Migration
                 ELSE delivery_status
             END");
 
-            DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('pending', 'partial', 'delivered', 'returned', 'canceled')");
+            if (!$isSqlite) {
+                DB::statement("ALTER TABLE sales MODIFY COLUMN delivery_status ENUM('pending', 'partial', 'delivered', 'returned', 'canceled')");
+            }
         }
     }
 };

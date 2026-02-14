@@ -15,6 +15,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // MySQL requires using raw SQL to modify ENUM values
         DB::statement("ALTER TABLE sale_items MODIFY COLUMN item_status ENUM('ACTIVE', 'CANCELED', 'PARTIAL_ADJUSTED') DEFAULT 'ACTIVE'");
     }
@@ -26,6 +30,11 @@ return new class extends Migration
     {
         // Remove PARTIAL_ADJUSTED from enum (convert existing PARTIAL_ADJUSTED to ACTIVE first)
         DB::statement("UPDATE sale_items SET item_status = 'ACTIVE' WHERE item_status = 'PARTIAL_ADJUSTED'");
+
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         DB::statement("ALTER TABLE sale_items MODIFY COLUMN item_status ENUM('ACTIVE', 'CANCELED') DEFAULT 'ACTIVE'");
     }
 };

@@ -13,19 +13,12 @@ return new class extends Migration
     public function up(): void
     {
         if (DB::getDriverName() === 'sqlite') {
-            // SQLite doesn't support ALTER COLUMN for enum
-            // Update existing records first
+            // SQLite stores enum-like fields as text, so value updates are sufficient.
             DB::table('weigh_in_prices')
                 ->where('type', 'copra')
                 ->update(['type' => 'cooked_copra']);
-            
-            Schema::table('weigh_in_prices', function (Blueprint $table) {
-                $table->dropColumn('type');
-            });
-            
-            Schema::table('weigh_in_prices', function (Blueprint $table) {
-                $table->enum('type', ['cooked_copra', 'uncooked_copra', 'coconut'])->unique()->after('id');
-            });
+
+            return;
         } else {
             // For MySQL/MariaDB
             // Step 1: Temporarily add new values to enum
@@ -52,13 +45,7 @@ return new class extends Migration
             ->update(['type' => 'copra']);
             
         if (DB::getDriverName() === 'sqlite') {
-            Schema::table('weigh_in_prices', function (Blueprint $table) {
-                $table->dropColumn('type');
-            });
-            
-            Schema::table('weigh_in_prices', function (Blueprint $table) {
-                $table->enum('type', ['copra', 'coconut'])->unique()->after('id');
-            });
+            return;
         } else {
             DB::statement("ALTER TABLE weigh_in_prices MODIFY COLUMN type ENUM('copra', 'coconut') NOT NULL");
         }
