@@ -6,6 +6,8 @@ import com.hims.nativeapp.data.local.OutboxEventEntity
 import com.hims.nativeapp.data.model.OutboxSaleCreateRequest
 import com.hims.nativeapp.data.model.OutboxStockMovementCreateRequest
 import com.hims.nativeapp.data.network.ApiService
+import com.hims.nativeapp.domain.DomainAction
+import com.hims.nativeapp.domain.EmitImpact
 import java.io.IOException
 import java.util.UUID
 
@@ -23,7 +25,7 @@ object OutboxStatuses {
 }
 
 sealed interface OutboxFlushResult {
-    data object Success : OutboxFlushResult
+    data class Success(val actions: Set<DomainAction>) : OutboxFlushResult
     data object RetryLater : OutboxFlushResult
     data object NeedsLogin : OutboxFlushResult
 }
@@ -45,12 +47,16 @@ class OutboxRepository(
                 createdAtEpochMs = System.currentTimeMillis(),
             ),
         )
+        actionForOutbox(type, payloadJson)?.let { action ->
+            EmitImpact.emit(action = action, reason = "queued")
+        }
         return id
     }
 
     suspend fun flushPending(limit: Int = 30): OutboxFlushResult {
         val rows = db.outboxEventDao().getPending(limit)
-        if (rows.isEmpty()) return OutboxFlushResult.Success
+        if (rows.isEmpty()) return OutboxFlushResult.Success(emptySet())
+        val syncedActions = linkedSetOf<DomainAction>()
 
         for (row in rows) {
             db.outboxEventDao().updateStatus(row.id, OutboxStatuses.PROCESSING, row.retries)
@@ -62,6 +68,7 @@ class OutboxRepository(
             when (outcome) {
                 HttpOutcome.SUCCESS -> {
                     db.outboxEventDao().updateStatus(row.id, OutboxStatuses.SENT, row.retries)
+                    actionFor(row)?.let { syncedActions.add(it) }
                 }
 
                 HttpOutcome.NEEDS_LOGIN -> {
@@ -83,7 +90,7 @@ class OutboxRepository(
         val sevenDaysAgo = System.currentTimeMillis() - 7L * 24L * 60L * 60L * 1000L
         db.outboxEventDao().deleteOldSent(sevenDaysAgo)
 
-        return OutboxFlushResult.Success
+        return OutboxFlushResult.Success(syncedActions)
     }
 
     private suspend fun execute(row: OutboxEventEntity): HttpOutcome {
@@ -114,5 +121,34 @@ class OutboxRepository(
         NEEDS_LOGIN,
         RETRYABLE,
         PERMANENT,
+    }
+
+    fun actionForOutbox(type: String, payloadJson: String): DomainAction? {
+        return actionFor(
+            OutboxEventEntity(
+                id = "",
+                type = type,
+                payloadJson = payloadJson,
+                status = "",
+                retries = 0,
+                createdAtEpochMs = 0L,
+            ),
+        )
+    }
+
+    private fun actionFor(row: OutboxEventEntity): DomainAction? {
+        return when (row.type) {
+            OutboxEventTypes.SALE_CREATE -> {
+                val payload = runCatching { gson.fromJson(row.payloadJson, OutboxSaleCreateRequest::class.java) }.getOrNull()
+                if (payload?.isForDelivery == true) {
+                    DomainAction.SALE_CREATED_DELIVERY
+                } else {
+                    DomainAction.SALE_COMPLETED_WALK_IN
+                }
+            }
+
+            OutboxEventTypes.STOCK_MOVEMENT_CREATE -> DomainAction.STOCK_ADJUSTMENT
+            else -> null
+        }
     }
 }

@@ -48,6 +48,8 @@ import com.hims.nativeapp.data.repository.BootstrapSnapshot
 import com.hims.nativeapp.data.repository.BootstrapRepository
 import com.hims.nativeapp.data.repository.OutboxEventTypes
 import com.hims.nativeapp.data.repository.OutboxRepository
+import com.hims.nativeapp.domain.DomainAction
+import com.hims.nativeapp.domain.EmitImpact
 import com.hims.nativeapp.startup.StartupCoordinator
 import com.hims.nativeapp.startup.StartupState
 import com.hims.nativeapp.ui.AppTab
@@ -502,14 +504,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             notes = notes.ifBlank { null },
                         ),
                     )
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        successMessage = response.message ?: "Stock added successfully.",
-                    )
-                refreshInventory()
-                refreshPos()
-                onSuccess()
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          successMessage = response.message ?: "Stock added successfully.",
+                      )
+                  EmitImpact.emit(
+                      action = DomainAction.STOCK_ADJUSTMENT,
+                      reason = "local",
+                      entityId = variantId,
+                  )
+                  refreshInventory()
+                  refreshPos()
+                  onSuccess()
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
                     val payload =
@@ -582,14 +589,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 notes = notes.ifBlank { null },
                             ),
                     )
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        successMessage = response.message ?: "Inventory adjusted successfully.",
-                    )
-                refreshInventory()
-                refreshPos()
-                onSuccess()
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          successMessage = response.message ?: "Inventory adjusted successfully.",
+                      )
+                  EmitImpact.emit(
+                      action = DomainAction.STOCK_ADJUSTMENT,
+                      reason = "local",
+                      entityId = variantId,
+                  )
+                  refreshInventory()
+                  refreshPos()
+                  onSuccess()
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
                     val payload =
@@ -734,14 +746,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             trackStock = trackStock,
                         ),
                     )
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        successMessage = response.message ?: "Product created successfully.",
-                    )
-                refreshProductsMenu()
-                refreshPos()
-                refreshInventory()
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          successMessage = response.message ?: "Product created successfully.",
+                      )
+                  EmitImpact.emit(action = DomainAction.PRODUCT_UPDATED, reason = "local")
+                  refreshProductsMenu()
+                  refreshPos()
+                  refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -796,14 +809,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 trackStock = trackStock,
                             ),
                     )
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        successMessage = response.message ?: "Product updated successfully.",
-                    )
-                refreshProductsMenu()
-                refreshPos()
-                refreshInventory()
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          successMessage = response.message ?: "Product updated successfully.",
+                      )
+                  EmitImpact.emit(
+                      action = DomainAction.PRODUCT_UPDATED,
+                      reason = "local",
+                      entityId = productId,
+                  )
+                  refreshProductsMenu()
+                  refreshPos()
+                  refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1335,15 +1353,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             ),
                     )
 
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        deliveryCartItems = emptyList(),
-                        successMessage = response.message ?: "Delivery processed successfully.",
-                    )
-                refreshSales()
-                refreshDeliveries()
-                onSuccess(response.data.id)
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          deliveryCartItems = emptyList(),
+                          successMessage = response.message ?: "Delivery processed successfully.",
+                      )
+                  EmitImpact.emit(
+                      action = DomainAction.DELIVERY_MARKED_DELIVERED,
+                      reason = "local",
+                      entityId = response.data.id,
+                  )
+                  refreshSales()
+                  refreshDeliveries()
+                  onSuccess(response.data.id)
             } catch (e: Exception) {
                 uiState =
                     uiState.copy(
@@ -1432,14 +1455,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
 
                 val response = api.checkoutPos(request)
-                uiState =
-                    uiState.copy(
-                        isActionLoading = false,
-                        posCartItems = emptyList(),
-                        successMessage = response.message ?: "Sale completed successfully.",
-                    )
-                refreshAll()
-                onSuccess(response.data.sale.id)
+                  uiState =
+                      uiState.copy(
+                          isActionLoading = false,
+                          posCartItems = emptyList(),
+                          successMessage = response.message ?: "Sale completed successfully.",
+                      )
+                  EmitImpact.emit(
+                      action = if (isForDelivery) DomainAction.SALE_CREATED_DELIVERY else DomainAction.SALE_COMPLETED_WALK_IN,
+                      reason = "local",
+                      entityId = response.data.sale.id,
+                  )
+                  refreshAll()
+                  onSuccess(response.data.sale.id)
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
                     val outboxRequest =

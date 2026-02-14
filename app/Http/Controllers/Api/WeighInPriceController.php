@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\WeighInPrice;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,7 +16,15 @@ class WeighInPriceController extends Controller
      */
     public function index(): JsonResponse
     {
-        $prices = WeighInPrice::all()->keyBy('type');
+        $prices = WeighInPrice::all()
+            ->mapWithKeys(function (WeighInPrice $row): array {
+                $canonical = $this->canonicalTypeKey((string) $row->type);
+                return [$canonical => [
+                    'id' => $row->id,
+                    'type' => $canonical,
+                    'price' => $row->price !== null ? (float) $row->price : 0.0,
+                ]];
+            });
 
         return response()->json([
             'success' => true,
@@ -44,19 +53,19 @@ class WeighInPriceController extends Controller
             }
         }
 
-        $typeKeys = array_values(array_unique(array_merge(
-            $prices->keys()->all(),
-            array_keys($productsByType)
+        $typeKeys = array_values(array_unique(array_map(
+            fn (string $key): string => $this->canonicalTypeKey($key),
+            array_merge($prices->keys()->all(), array_keys($productsByType))
         )));
         $typeKeys = $this->sortTypeKeys($typeKeys);
 
         $pricesPayload = [];
         $products = [];
         foreach ($typeKeys as $type) {
-            $priceRow = $prices->get($type);
+            $priceRow = $prices->get($type) ?? $prices->get($this->resolveStorageType($type));
             $pricesPayload[$type] = $priceRow ? [
                 'id' => $priceRow->id,
-                'type' => $priceRow->type,
+                'type' => $type,
                 'price' => $priceRow->price !== null ? (float) $priceRow->price : 0.0,
             ] : [
                 'id' => null,
@@ -89,9 +98,9 @@ class WeighInPriceController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $normalizedType = strtolower(trim($type));
+        $normalizedType = $this->canonicalTypeKey($type);
         $allowedTypes = array_unique(array_merge(
-            WeighInPrice::query()->pluck('type')->all(),
+            WeighInPrice::query()->pluck('type')->map(fn ($row) => $this->canonicalTypeKey((string) $row))->all(),
             $this->getAgriTypeKeys(),
             ['cooked_copra', 'uncooked_copra', 'coconut', 'bagol']
         ));
@@ -107,15 +116,33 @@ class WeighInPriceController extends Controller
             'price' => 'required|numeric|min:0',
         ]);
 
-        $price = WeighInPrice::updateOrCreate(
-            ['type' => $normalizedType],
-            ['price' => $request->price]
-        );
+        $storageType = $this->resolveStorageType($normalizedType);
+
+        try {
+            $price = WeighInPrice::updateOrCreate(
+                ['type' => $storageType],
+                ['price' => $request->price]
+            );
+        } catch (QueryException $e) {
+            // Legacy schema fallback: some DBs still use 'copra' enum value.
+            if ($normalizedType === 'cooked_copra') {
+                $price = WeighInPrice::updateOrCreate(
+                    ['type' => 'copra'],
+                    ['price' => $request->price]
+                );
+            } else {
+                throw $e;
+            }
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Price updated successfully',
-            'data' => $price,
+            'data' => [
+                'id' => $price->id,
+                'type' => $normalizedType,
+                'price' => $price->price !== null ? (float) $price->price : 0.0,
+            ],
         ]);
     }
 
@@ -143,6 +170,7 @@ class WeighInPriceController extends Controller
                 return $this->inferTypeKeyFromProduct($product);
             })
             ->filter()
+            ->map(fn (string $value): string => $this->canonicalTypeKey($value))
             ->unique()
             ->values()
             ->all();
@@ -152,7 +180,7 @@ class WeighInPriceController extends Controller
     {
         $sku = trim((string) $product->sku);
         if ($sku !== '') {
-            return strtolower(str_replace('-', '_', $sku));
+            return $this->canonicalTypeKey(strtolower(str_replace('-', '_', $sku)));
         }
 
         $name = trim((string) $product->name);
@@ -161,7 +189,7 @@ class WeighInPriceController extends Controller
         }
 
         $normalized = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', '_', $name), '_'));
-        return $normalized !== '' ? $normalized : null;
+        return $normalized !== '' ? $this->canonicalTypeKey($normalized) : null;
     }
 
     /**
@@ -208,6 +236,37 @@ class WeighInPriceController extends Controller
         }
 
         return $image;
+    }
+
+    private function canonicalTypeKey(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === 'copra') {
+            return 'cooked_copra';
+        }
+
+        return $normalized;
+    }
+
+    private function resolveStorageType(string $canonicalType): string
+    {
+        if ($canonicalType !== 'cooked_copra') {
+            return $canonicalType;
+        }
+
+        $existingTypes = WeighInPrice::query()
+            ->pluck('type')
+            ->map(static fn ($row): string => strtolower(trim((string) $row)));
+
+        if ($existingTypes->contains('cooked_copra')) {
+            return 'cooked_copra';
+        }
+
+        if ($existingTypes->contains('copra')) {
+            return 'copra';
+        }
+
+        return 'cooked_copra';
     }
 }
 

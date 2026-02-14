@@ -17,7 +17,7 @@ import java.io.IOException
 
 sealed interface BootstrapRefreshResult {
     data class Updated(val snapshot: BootstrapSnapshot) : BootstrapRefreshResult
-    data object NotModified : BootstrapRefreshResult
+    data class NotModified(val snapshot: BootstrapSnapshot?) : BootstrapRefreshResult
     data object Unauthorized : BootstrapRefreshResult
     data class NetworkError(val retryable: Boolean) : BootstrapRefreshResult
 }
@@ -56,7 +56,7 @@ class BootstrapRepository(
         val cached = db.bootstrapStateDao().get()
 
         if (!force && cached != null && meta != null && !meta.isStale(now)) {
-            return BootstrapRefreshResult.NotModified
+            return BootstrapRefreshResult.NotModified(currentSnapshot())
         }
 
         return try {
@@ -80,7 +80,7 @@ class BootstrapRepository(
                             fetchedAtEpochMs = now,
                         ),
                     )
-                    BootstrapRefreshResult.NotModified
+                    BootstrapRefreshResult.NotModified(currentSnapshot())
                 }
 
                 200 -> {

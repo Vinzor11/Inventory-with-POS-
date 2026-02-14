@@ -100,6 +100,34 @@ data class ProductRemoteKeyEntity(
     val syncedAtEpochMs: Long,
 )
 
+@Entity(
+    tableName = "stock_on_hand",
+    indices = [Index("productVariantId")],
+)
+data class StockOnHandEntity(
+    @PrimaryKey
+    val productVariantId: Int,
+    val quantityOnHand: Double,
+    val updatedAtEpochMs: Long,
+)
+
+@Entity(
+    tableName = "local_stock_movements",
+    indices = [
+        Index(value = ["movementKey"], unique = true),
+        Index("createdAtEpochMs"),
+    ],
+)
+data class LocalStockMovementEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val movementKey: String,
+    val productVariantId: Int,
+    val deltaQty: Double,
+    val source: String,
+    val createdAtEpochMs: Long,
+)
+
 @Dao
 interface BootstrapStateDao {
     @Query("SELECT * FROM bootstrap_state WHERE id = 1 LIMIT 1")
@@ -199,6 +227,27 @@ interface ProductRemoteKeyDao {
     suspend fun delete(searchKey: String)
 }
 
+@Dao
+interface StockOnHandDao {
+    @Query("SELECT * FROM stock_on_hand WHERE productVariantId = :variantId LIMIT 1")
+    suspend fun get(variantId: Int): StockOnHandEntity?
+
+    @Query("SELECT quantityOnHand FROM stock_on_hand WHERE productVariantId = :variantId LIMIT 1")
+    fun observeQuantity(variantId: Int): Flow<Double?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: StockOnHandEntity)
+}
+
+@Dao
+interface LocalStockMovementDao {
+    @Query("SELECT EXISTS(SELECT 1 FROM local_stock_movements WHERE movementKey = :movementKey)")
+    suspend fun exists(movementKey: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entity: LocalStockMovementEntity): Long
+}
+
 @Database(
     entities = [
         BootstrapStateEntity::class,
@@ -208,8 +257,10 @@ interface ProductRemoteKeyDao {
         OutboxEventEntity::class,
         ProductPagedEntity::class,
         ProductRemoteKeyEntity::class,
+        StockOnHandEntity::class,
+        LocalStockMovementEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -220,6 +271,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun outboxEventDao(): OutboxEventDao
     abstract fun productsPagingDao(): ProductsPagingDao
     abstract fun productRemoteKeyDao(): ProductRemoteKeyDao
+    abstract fun stockOnHandDao(): StockOnHandDao
+    abstract fun localStockMovementDao(): LocalStockMovementDao
 
     companion object {
         @Volatile
@@ -231,7 +284,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "hims_pos_cache.db",
-                ).build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = created
                 created
             }

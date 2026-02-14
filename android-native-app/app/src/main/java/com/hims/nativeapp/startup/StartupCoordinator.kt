@@ -4,11 +4,13 @@ import com.hims.nativeapp.data.repository.BootstrapRefreshResult
 import com.hims.nativeapp.data.repository.BootstrapRepository
 import com.hims.nativeapp.data.repository.BootstrapSnapshot
 import com.hims.nativeapp.data.network.SessionStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
 sealed interface StartupState {
@@ -50,67 +52,79 @@ class StartupCoordinator(
     }
 
     private suspend fun run(force: Boolean) {
-        val cached = bootstrapRepository.currentSnapshot()
+        val cached = withContext(Dispatchers.IO) { bootstrapRepository.currentSnapshot() }
         val token = sessionStore.getToken()
         if (token.isNullOrBlank()) {
             if (cached != null) {
-                _state.value = StartupState.OfflineReady(cached)
+                setStateIfChanged(StartupState.OfflineReady(cached))
             } else {
-                _state.value = StartupState.NeedsLogin
+                setStateIfChanged(StartupState.NeedsLogin)
             }
             return
         }
 
         if (cached != null) {
-            _state.value = StartupState.Ready(cached)
+            setStateIfChanged(StartupState.Ready(cached))
         } else {
-            _state.value = StartupState.Loading
+            setStateIfChanged(StartupState.Loading)
         }
 
-        _refreshing.value = true
+        setRefreshingIfChanged(true)
         try {
-            when (val result = bootstrapRepository.refreshSWR(force = force)) {
+            when (val result = withContext(Dispatchers.IO) { bootstrapRepository.refreshSWR(force = force) }) {
                 is BootstrapRefreshResult.Updated -> {
-                    _state.value = StartupState.Ready(result.snapshot)
+                    setStateIfChanged(StartupState.Ready(result.snapshot))
                 }
 
-                BootstrapRefreshResult.NotModified -> {
-                    val latest = bootstrapRepository.currentSnapshot()
+                is BootstrapRefreshResult.NotModified -> {
+                    val latest = result.snapshot
                     if (latest != null) {
-                        _state.value = StartupState.Ready(latest)
+                        setStateIfChanged(StartupState.Ready(latest))
                     } else {
-                        _state.value = StartupState.Failed(
+                        setStateIfChanged(StartupState.Failed(
                             "Startup data is unavailable. Pull to refresh when server is reachable.",
-                        )
+                        ))
                     }
                 }
 
                 BootstrapRefreshResult.Unauthorized -> {
-                    val fallback = bootstrapRepository.currentSnapshot()
+                    val fallback = withContext(Dispatchers.IO) { bootstrapRepository.currentSnapshot() }
                     if (fallback != null) {
-                        _state.value = StartupState.OfflineReady(fallback)
+                        setStateIfChanged(StartupState.OfflineReady(fallback))
                     } else {
-                        _state.value = StartupState.NeedsLogin
+                        setStateIfChanged(StartupState.NeedsLogin)
                     }
                 }
 
                 is BootstrapRefreshResult.NetworkError -> {
-                    val fallback = bootstrapRepository.currentSnapshot()
+                    val fallback = withContext(Dispatchers.IO) { bootstrapRepository.currentSnapshot() }
                     if (fallback != null) {
-                        _state.value = StartupState.OfflineReady(fallback)
+                        setStateIfChanged(StartupState.OfflineReady(fallback))
                     } else {
-                        _state.value = StartupState.Failed(
+                        setStateIfChanged(StartupState.Failed(
                             if (result.retryable) {
                                 "Cannot reach server right now. Pull to refresh to retry."
                             } else {
                                 "Startup failed due to a server error. Pull to refresh."
                             },
-                        )
+                        ))
                     }
                 }
             }
         } finally {
-            _refreshing.value = false
+            setRefreshingIfChanged(false)
+        }
+    }
+
+    private fun setStateIfChanged(newState: StartupState) {
+        if (_state.value != newState) {
+            _state.value = newState
+        }
+    }
+
+    private fun setRefreshingIfChanged(value: Boolean) {
+        if (_refreshing.value != value) {
+            _refreshing.value = value
         }
     }
 }

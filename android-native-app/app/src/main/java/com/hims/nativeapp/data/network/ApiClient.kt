@@ -1,6 +1,7 @@
 package com.hims.nativeapp.data.network
 
 import com.hims.nativeapp.BuildConfig
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -11,7 +12,11 @@ object ApiClient {
     fun create(sessionStore: SessionStore): ApiService {
         val logging =
             HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
+                level = if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
             }
 
         val authInterceptor = okhttp3.Interceptor { chain ->
@@ -31,6 +36,7 @@ object ApiClient {
             OkHttpClient.Builder()
                 .addInterceptor(authInterceptor)
                 .addInterceptor(logging)
+                .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
                 .build()

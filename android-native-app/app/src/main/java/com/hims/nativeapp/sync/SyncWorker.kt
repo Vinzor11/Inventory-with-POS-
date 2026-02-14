@@ -20,6 +20,7 @@ import com.hims.nativeapp.data.repository.BootstrapRefreshResult
 import com.hims.nativeapp.data.repository.BootstrapRepository
 import com.hims.nativeapp.data.repository.OutboxFlushResult
 import com.hims.nativeapp.data.repository.OutboxRepository
+import com.hims.nativeapp.domain.EmitImpact
 import java.util.concurrent.TimeUnit
 
 private const val KEY_REFRESH_BOOTSTRAP = "refresh_bootstrap"
@@ -36,17 +37,20 @@ class SyncWorker(
         val outboxRepository = OutboxRepository(api, db)
         val bootstrapRepository = BootstrapRepository(api, db)
 
-        return when (outboxRepository.flushPending()) {
+        return when (val outbox = outboxRepository.flushPending()) {
             OutboxFlushResult.NeedsLogin -> ListenableWorker.Result.failure()
             OutboxFlushResult.RetryLater -> ListenableWorker.Result.retry()
-            OutboxFlushResult.Success -> {
+            is OutboxFlushResult.Success -> {
+                outbox.actions.forEach { action ->
+                    EmitImpact.emit(action = action, reason = "synced")
+                }
                 if (!shouldRefreshBootstrap) {
                     return ListenableWorker.Result.success()
                 }
 
                 when (val bootstrap = bootstrapRepository.refreshSWR(force = false)) {
                     is BootstrapRefreshResult.Updated -> ListenableWorker.Result.success()
-                    BootstrapRefreshResult.NotModified -> ListenableWorker.Result.success()
+                    is BootstrapRefreshResult.NotModified -> ListenableWorker.Result.success()
                     BootstrapRefreshResult.Unauthorized -> ListenableWorker.Result.failure()
                     is BootstrapRefreshResult.NetworkError -> {
                         if (bootstrap.retryable) {
