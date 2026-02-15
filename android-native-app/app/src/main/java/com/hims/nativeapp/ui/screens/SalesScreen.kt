@@ -5,15 +5,16 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -1716,7 +1717,7 @@ private fun RefundSheet(
     onDismiss: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1724,8 +1725,8 @@ private fun RefundSheet(
         Column(
             modifier =
                 Modifier
-                    .fillMaxHeight(0.95f)
                     .fillMaxWidth()
+                    .heightIn(min = 320.dp, max = 640.dp)
                     .verticalScroll(rememberScrollState())
                     .imePadding()
                     .navigationBarsPadding()
@@ -1800,7 +1801,10 @@ private fun RefundSheet(
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 MethodChip(label = "Cash", selected = method == "cash") { onMethodChange("cash") }
                 MethodChip(label = "Card", selected = method == "card") { onMethodChange("card") }
                 MethodChip(label = "GCash", selected = method == "gcash") { onMethodChange("gcash") }

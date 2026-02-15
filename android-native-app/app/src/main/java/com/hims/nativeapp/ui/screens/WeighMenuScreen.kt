@@ -396,6 +396,8 @@ private fun WeighItemRow(
     product: WeighLandingProduct?,
 ) {
     val typeLabel = prettyWeighType(item.type)
+    val isCoconut = item.type == "coconut"
+    val unitSuffix = if (isCoconut) "/pc" else "/kg"
     val imageUrl = fullImageUrl(BuildConfig.API_BASE_URL, product?.image)
 
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -439,13 +441,18 @@ private fun WeighItemRow(
             }
             Text(
                 text =
-                    if (item.type == "coconut") {
+                    if (isCoconut) {
                         "Count: ${formatQty(item.count ?: 0.0)}"
                     } else {
                         "Weight: ${formatQty(item.weightKg ?: 0.0)} kg"
                     },
                 color = Color(0xFF374151),
                 fontSize = 13.sp,
+            )
+            Text(
+                text = "Price: ${formatPeso(item.unitPrice)} $unitSuffix",
+                color = Color(0xFF6B7280),
+                fontSize = 12.sp,
             )
         }
         Text(

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
+use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\RefundItem;
 use App\Models\Sale;
@@ -58,11 +59,13 @@ class RefundController extends Controller
             $refundedQty = $sale->refunds->flatMap->items
                 ->where('sale_item_id', $item->id)
                 ->sum('quantity');
+            $canceledQty = (float) ($item->canceled_quantity ?? 0);
+            $refundableQty = max(0, ((float) $item->quantity) - ((float) $refundedQty) - $canceledQty);
 
             return [
                 'sale_item' => $item,
                 'refunded_quantity' => $refundedQty,
-                'refundable_quantity' => $item->quantity - $refundedQty,
+                'refundable_quantity' => $refundableQty,
             ];
         });
 
@@ -84,11 +87,25 @@ class RefundController extends Controller
 
         $request->validate([
             'items' => 'required|array|min:1',
-            'items.*.sale_item_id' => 'required|exists:sale_items,id',
+            'items.*.sale_item_id' => 'required|integer|distinct',
             'items.*.quantity' => 'required|integer|min:1',
             'reason' => 'required|string|max:500',
             'refund_method' => 'required|string|in:cash,card,gcash,maya,store_credit',
         ]);
+
+        $sale->load([
+            'items.productVariant.inventory',
+            'items.productVariant.product',
+            'refunds.items',
+            'deliveries.items',
+        ]);
+
+        if (!$sale->isEligibleForRefund()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This sale is not eligible for refund.',
+            ], 422);
+        }
 
         if ($sale->status === 'VOIDED') {
             return response()->json([
@@ -101,86 +118,137 @@ class RefundController extends Controller
             $refund = DB::transaction(function () use ($request, $sale) {
                 $totalRefundAmount = 0;
                 $refundItems = [];
+                $existingRefundedBySaleItem = $sale->refunds
+                    ->flatMap->items
+                    ->groupBy('sale_item_id')
+                    ->map(fn ($items) => (float) $items->sum('quantity'));
 
                 foreach ($request->items as $itemData) {
-                    $saleItem = $sale->items()->find($itemData['sale_item_id']);
+                    $saleItemId = (int) $itemData['sale_item_id'];
+                    $saleItem = $sale->items->firstWhere('id', $saleItemId);
 
                     if (!$saleItem) {
                         throw new \Exception("Item not found in this sale");
                     }
 
-                    // Calculate already refunded quantity
-                    $refundedQty = $sale->refunds->flatMap->items
-                        ->where('sale_item_id', $saleItem->id)
-                        ->sum('quantity');
+                    $requestedQty = (float) $itemData['quantity'];
+                    $refundedQty = (float) ($existingRefundedBySaleItem[$saleItem->id] ?? 0);
+                    $canceledQty = (float) ($saleItem->canceled_quantity ?? 0);
+                    $refundableQty = max(0, ((float) $saleItem->quantity) - $refundedQty - $canceledQty);
 
-                    $refundableQty = $saleItem->quantity - $refundedQty;
-
-                    if ($itemData['quantity'] > $refundableQty) {
+                    if ($requestedQty > $refundableQty) {
                         throw new \Exception(
                             "Cannot refund {$itemData['quantity']} of {$saleItem->productVariant->description}. " .
                             "Only {$refundableQty} available for refund."
                         );
                     }
 
-                    $refundAmount = ($saleItem->unit_price * $itemData['quantity']);
+                    $refundAmount = ((float) $saleItem->unit_price) * $requestedQty;
                     $totalRefundAmount += $refundAmount;
 
                     $refundItems[] = [
                         'sale_item' => $saleItem,
-                        'quantity' => $itemData['quantity'],
+                        'quantity' => $requestedQty,
                         'amount' => $refundAmount,
+                        'restore_inventory' => true,
                     ];
+
+                    $existingRefundedBySaleItem[$saleItem->id] = $refundedQty + $requestedQty;
                 }
 
-                // Create refund
+                if ($totalRefundAmount <= 0) {
+                    throw new \Exception('Refund amount must be greater than zero.');
+                }
+
+                $remainingRefundable = (float) $sale->remaining_refundable;
+                if ($totalRefundAmount > $remainingRefundable) {
+                    throw new \Exception(
+                        "Refund amount ({$totalRefundAmount}) exceeds remaining refundable amount ({$remainingRefundable})."
+                    );
+                }
+
+                $isFullRefund = $totalRefundAmount >= $remainingRefundable;
+
                 $refund = Refund::create([
                     'sale_id' => $sale->id,
-                    'refund_number' => Refund::generateRefundNumber(),
-                    'total_amount' => $totalRefundAmount,
+                    'refund_amount' => $totalRefundAmount,
                     'reason' => $request->reason,
-                    'refund_method' => $request->refund_method,
                     'processed_by_user_id' => $request->user()->id,
+                    'type' => $isFullRefund ? 'full' : 'partial',
                 ]);
 
-                // Create refund items and restore inventory
                 foreach ($refundItems as $itemData) {
                     $saleItem = $itemData['sale_item'];
+                    $variant = $saleItem->productVariant;
 
                     RefundItem::create([
                         'refund_id' => $refund->id,
                         'sale_item_id' => $saleItem->id,
-                        'product_variant_id' => $saleItem->product_variant_id,
-                        'quantity' => $itemData['quantity'],
-                        'unit_price' => $saleItem->unit_price,
-                        'amount' => $itemData['amount'],
-                    ]);
-
-                    // Restore inventory
-                    $variant = $saleItem->productVariant;
-                    $currentStock = $variant->inventory->quantity_on_hand ?? 0;
-                    $newStock = $currentStock + $itemData['quantity'];
-
-                    InventoryMovement::create([
                         'product_variant_id' => $variant->id,
                         'quantity' => $itemData['quantity'],
-                        'type' => 'IN',
-                        'reason' => 'refund',
-                        'reference_id' => $refund->id,
-                        'notes' => "Refund: {$refund->refund_number}",
-                        'recorded_by_user_id' => $request->user()->id,
+                        'amount' => $itemData['amount'],
+                        'restore_inventory' => $itemData['restore_inventory'],
                     ]);
 
-                    Inventory::updateOrCreate(
-                        ['product_variant_id' => $variant->id],
-                        ['quantity_on_hand' => $newStock]
-                    );
+                    if ($itemData['restore_inventory']) {
+                        $currentStock = (float) ($variant->inventory->quantity_on_hand ?? 0);
+                        $newStock = $currentStock + ((float) $itemData['quantity']);
+
+                        InventoryMovement::create([
+                            'branch_id' => $sale->branch_id ?? ($request->user()->branch_id ?? 1),
+                            'product_variant_id' => $variant->id,
+                            'product_id' => $variant->product_id,
+                            'quantity' => $itemData['quantity'],
+                            'qty' => $itemData['quantity'],
+                            'type' => 'IN',
+                            'movement_type' => 'IN',
+                            'reason' => 'refund',
+                            'reference_id' => $sale->id,
+                            'reference_type' => Sale::class,
+                            'unit_cost' => $saleItem->unit_cost ?? null,
+                            'total_cost' => ($saleItem->unit_cost ?? null) !== null
+                                ? ((float) $saleItem->unit_cost) * ((float) $itemData['quantity'])
+                                : null,
+                            'notes' => "Refund for sale: {$sale->sale_number}",
+                            'recorded_by_user_id' => $request->user()->id,
+                        ]);
+
+                        Inventory::updateOrCreate(
+                            ['product_variant_id' => $variant->id],
+                            ['quantity_on_hand' => $newStock]
+                        );
+                    }
                 }
 
-                // Update sale status
+                $paymentMethod = match ($request->refund_method) {
+                    'cash' => 'cash',
+                    'gcash' => 'gcash',
+                    'card', 'store_credit' => 'credit',
+                    'maya' => 'gcash',
+                    default => 'cash',
+                };
+
+                Payment::create([
+                    'sale_id' => $sale->id,
+                    'amount' => -$totalRefundAmount,
+                    'payment_method' => $paymentMethod,
+                    'received_by_user_id' => $request->user()->id,
+                    'received_at' => now(),
+                    'notes' => "Refund: {$request->reason}",
+                ]);
+
                 $sale->refresh();
-                $sale->computeSaleStatus();
+                $sale->load('payments', 'refunds');
                 $sale->updatePaymentStatus();
+                $sale->computeSaleStatus();
+
+                if ($sale->is_for_delivery) {
+                    $sale->load('deliveries');
+                    foreach ($sale->deliveries as $delivery) {
+                        $delivery->computeStatus();
+                    }
+                    $sale->refresh();
+                }
 
                 return $refund;
             });
@@ -190,7 +258,7 @@ class RefundController extends Controller
                 'message' => 'Refund processed successfully',
                 'data' => $refund->load(['items.productVariant.product', 'processedBy', 'sale']),
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
