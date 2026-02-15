@@ -998,7 +998,10 @@ private fun SaleCard(
 
             Spacer(modifier = Modifier.height(8.dp))
             visibleItems.forEachIndexed { index, item ->
-                SaleItemRow(item = item)
+                SaleItemRow(
+                    item = item,
+                    forceStrikeAmount = shouldStrikeItemAmount(sale),
+                )
                 if (index < visibleItems.lastIndex) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderSoft)
                 }
@@ -1041,29 +1044,12 @@ private fun SaleCard(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp,
                     )
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (amountDisplay.showAdjusted) {
-                            Text(
-                                text = formatPeso(amountDisplay.originalTotal),
-                                color = Color(0xFF6B7280),
-                                fontSize = 14.sp,
-                                textDecoration = TextDecoration.LineThrough,
-                            )
-                            Text(
-                                text = formatPeso(amountDisplay.adjustedTotal),
-                                color = TextCharcoal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                            )
-                        } else {
-                            Text(
-                                text = formatPeso(amountDisplay.originalTotal),
-                                color = TextCharcoal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                            )
-                        }
-                    }
+                    Text(
+                        text = formatPeso(if (amountDisplay.showAdjusted) amountDisplay.adjustedTotal else amountDisplay.originalTotal),
+                        color = TextCharcoal,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                    )
                 }
             }
 
@@ -1115,13 +1101,17 @@ private fun SaleItemRow(
     item: SaleItem,
     showAdjustmentBreakdown: Boolean = false,
     showPartialAdjustedBadge: Boolean = false,
+    forceStrikeAmount: Boolean = false,
 ) {
     val imageUrl = fullImageUrl(BuildConfig.API_BASE_URL, item.productVariant.product?.image)
     val lineTotal = if (item.lineTotal > 0.0) item.lineTotal else (item.unitPrice * item.quantity)
+    val originalLineTotal = (item.unitPrice * item.quantity).takeIf { it > 0.0 } ?: lineTotal
     val canceledQty = (item.canceledQuantity ?: 0.0).coerceAtLeast(0.0)
     val itemStatus = item.itemStatus.orEmpty().uppercase()
     val isCanceled = itemStatus == "CANCELED"
+    val hasCanceledQty = canceledQty > 0.0
     val isPartiallyAdjusted = itemStatus == "PARTIAL_ADJUSTED"
+    val shouldStrikeAmount = hasCanceledQty || isCanceled || forceStrikeAmount
     val statusLabel =
         when {
             isCanceled -> "Canceled"
@@ -1245,11 +1235,11 @@ private fun SaleItemRow(
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = formatPeso(lineTotal),
-                    color = if (isCanceled) Color(0xFF6B7280) else TextCharcoal,
+                    text = formatPeso(if (hasCanceledQty) originalLineTotal else lineTotal),
+                    color = if (shouldStrikeAmount) Color(0xFF6B7280) else TextCharcoal,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    textDecoration = if (isCanceled) TextDecoration.LineThrough else null,
+                    textDecoration = if (shouldStrikeAmount) TextDecoration.LineThrough else null,
                 )
             }
         }
@@ -1437,6 +1427,7 @@ private fun SaleDetailsFullScreen(
                         item = item,
                         showAdjustmentBreakdown = true,
                         showPartialAdjustedBadge = true,
+                        forceStrikeAmount = shouldStrikeItemAmount(sale),
                     )
                     if (canCancelSaleItem(sale, item, canManageAdminActions)) {
                         Row(
@@ -1476,29 +1467,12 @@ private fun SaleDetailsFullScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
                     )
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (amountDisplay.showAdjusted) {
-                            Text(
-                                text = formatPeso(amountDisplay.originalTotal),
-                                color = Color(0xFF6B7280),
-                                fontSize = 14.sp,
-                                textDecoration = TextDecoration.LineThrough,
-                            )
-                            Text(
-                                text = formatPeso(amountDisplay.adjustedTotal),
-                                color = TextCharcoal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                            )
-                        } else {
-                            Text(
-                                text = formatPeso(amountDisplay.originalTotal),
-                                color = TextCharcoal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                            )
-                        }
-                    }
+                    Text(
+                        text = formatPeso(if (amountDisplay.showAdjusted) amountDisplay.adjustedTotal else amountDisplay.originalTotal),
+                        color = TextCharcoal,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                    )
                 }
             }
 
@@ -1988,8 +1962,9 @@ private fun computeSaleAmountDisplay(
         if (forceZero) {
             0.0
         } else {
-            (sale.total - totalRefunded - totalCanceledDeductions).coerceAtLeast(0.0)
+            (sale.total - totalRefunded).coerceAtLeast(0.0)
         }
+    val originalTotal = (sale.total + totalCanceledDeductions).coerceAtLeast(0.0)
     val showAdjusted =
         forceZero ||
             saleStatus == "PARTIALLY_REFUNDED" ||
@@ -1997,7 +1972,7 @@ private fun computeSaleAmountDisplay(
             totalRefunded > 0.0 ||
             totalCanceledDeductions > 0.0
     return SaleAmountDisplay(
-        originalTotal = sale.total.coerceAtLeast(0.0),
+        originalTotal = originalTotal,
         adjustedTotal = adjustedTotal,
         showAdjusted = showAdjusted,
     )
@@ -2072,6 +2047,12 @@ private fun canAddPayment(sale: Sale): Boolean {
         return false
     }
     return true
+}
+
+private fun shouldStrikeItemAmount(sale: Sale): Boolean {
+    val saleStatus = sale.status.uppercase()
+    val paymentStatus = sale.paymentStatus.orEmpty().uppercase()
+    return saleStatus == "VOIDED" || saleStatus == "REFUNDED" || paymentStatus == "REFUNDED"
 }
 
 private fun canCancelSaleItem(

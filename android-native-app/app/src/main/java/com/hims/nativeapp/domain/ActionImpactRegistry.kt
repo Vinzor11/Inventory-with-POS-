@@ -5,6 +5,7 @@ import com.hims.nativeapp.core.DataTopic
 enum class DomainAction {
     SALE_COMPLETED_WALK_IN,
     SALE_CREATED_DELIVERY,
+    SALE_PAYMENT_ADDED,
     SALE_REFUNDED,
     SALE_VOIDED,
     DELIVERY_MARKED_DELIVERED,
@@ -24,6 +25,9 @@ object ActionImpactRegistry {
         DomainAction.SALE_CREATED_DELIVERY to setOf(
             DataTopic.TRANSACTIONS,
             DataTopic.DELIVERIES,
+        ),
+        DomainAction.SALE_PAYMENT_ADDED to setOf(
+            DataTopic.TRANSACTIONS,
         ),
         DomainAction.SALE_REFUNDED to setOf(
             DataTopic.STOCK,

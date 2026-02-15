@@ -10,15 +10,15 @@ class NativeApplication : Application() {
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(
                 StrictMode.ThreadPolicy.Builder()
-                    .detectDiskReads()
-                    .detectDiskWrites()
+                    // OEM framework hooks can trigger harmless disk-read violations on touch/scroll.
+                    // Keep network detection enabled for app-side violations with less noisy logs.
                     .detectNetwork()
                     .penaltyLog()
                     .build(),
             )
             StrictMode.setVmPolicy(
                 StrictMode.VmPolicy.Builder()
-                    .detectLeakedClosableObjects()
+                    // Disable noisy platform false-positives (InsetsSourceControl / SurfaceControl finalizers).
                     .penaltyLog()
                     .build(),
             )

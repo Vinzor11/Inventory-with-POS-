@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Scale
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -99,6 +100,7 @@ fun WeighScreen(
     onUpdateDraftWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateDraftCount: (localId: String, count: Int) -> Unit,
     onUpdateDraftUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
+    onApplyDraftUnitPriceToType: (type: String, unitPrice: Double?) -> Unit,
     onRemoveDraftItem: (localId: String) -> Unit,
     onClearDraft: () -> Unit,
     onProcessDraft: (pin: String, onSuccess: () -> Unit) -> Unit,
@@ -288,6 +290,7 @@ fun WeighScreen(
             onUpdateWeight = onUpdateDraftWeight,
             onUpdateCount = onUpdateDraftCount,
             onUpdateUnitPrice = onUpdateDraftUnitPrice,
+            onApplyUnitPriceToType = onApplyDraftUnitPriceToType,
             onRemoveItem = onRemoveDraftItem,
             onClear = onClearDraft,
             onProcess = onProcessDraft,
@@ -600,6 +603,7 @@ private fun WeighDraftCartSheet(
     onUpdateWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateCount: (localId: String, count: Int) -> Unit,
     onUpdateUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
+    onApplyUnitPriceToType: (type: String, unitPrice: Double?) -> Unit,
     onRemoveItem: (localId: String) -> Unit,
     onClear: () -> Unit,
     onProcess: (pin: String, onSuccess: () -> Unit) -> Unit,
@@ -675,6 +679,7 @@ private fun WeighDraftCartSheet(
                         onUpdateWeight = onUpdateWeight,
                         onUpdateCount = onUpdateCount,
                         onUpdateUnitPrice = onUpdateUnitPrice,
+                        onApplyUnitPriceToType = onApplyUnitPriceToType,
                         onRemove = onRemoveItem,
                     )
                     if (index < items.lastIndex) {
@@ -884,6 +889,7 @@ private fun WeighDraftRow(
     onUpdateWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateCount: (localId: String, count: Int) -> Unit,
     onUpdateUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
+    onApplyUnitPriceToType: (type: String, unitPrice: Double?) -> Unit,
     onRemove: (localId: String) -> Unit,
 ) {
     var countInput by remember(item.localId) { mutableStateOf((item.count ?: 1).toString()) }
@@ -896,6 +902,7 @@ private fun WeighDraftRow(
     }
     var showPriceDialog by remember(item.localId) { mutableStateOf(false) }
     var unitPriceInput by remember(item.localId) { mutableStateOf(item.customUnitPrice?.let(::formatCompactNumber).orEmpty()) }
+    var applyToAllSameType by remember(item.localId) { mutableStateOf(false) }
 
     val title = when (item.type) {
         "cooked_copra" -> "Cooked Copra"
@@ -925,6 +932,19 @@ private fun WeighDraftRow(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit price",
+                    tint = PrimaryBlue,
+                    modifier =
+                        Modifier
+                            .size(18.dp)
+                            .clickable(enabled = !isActionLoading) {
+                                unitPriceInput = formatCompactNumber(item.customUnitPrice ?: item.unitPrice)
+                                showPriceDialog = true
+                            },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = formatPeso(item.totalAmount),
                     color = TextCharcoal,
@@ -1008,25 +1028,6 @@ private fun WeighDraftRow(
                     fontSize = 12.sp,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    enabled = !isActionLoading,
-                    onClick = {
-                        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
-                        showPriceDialog = true
-                    },
-                ) {
-                    Text(
-                        text = if (item.customUnitPrice != null) "Edit*" else "Edit",
-                        color = PrimaryBlue,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
         }
     }
 
@@ -1056,21 +1057,47 @@ private fun WeighDraftRow(
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Apply to all same type",
+                            color = Color(0xFF374151),
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        androidx.compose.material3.Switch(
+                            checked = applyToAllSameType,
+                            onCheckedChange = { applyToAllSameType = it },
+                            enabled = !isActionLoading,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
                     ) {
                         TextButton(
                             enabled = !isActionLoading,
                             onClick = {
-                                onUpdateUnitPrice(item.localId, null)
+                                if (applyToAllSameType) {
+                                    onApplyUnitPriceToType(item.type, null)
+                                } else {
+                                    onUpdateUnitPrice(item.localId, null)
+                                }
                                 showPriceDialog = false
+                                applyToAllSameType = false
                             },
                         ) { Text("Reset", color = Color(0xFF6B7280)) }
                         TextButton(
                             enabled = !isActionLoading,
                             onClick = {
                                 val parsed = unitPriceInput.trim().toDoubleOrNull()
-                                onUpdateUnitPrice(item.localId, parsed)
+                                if (applyToAllSameType) {
+                                    onApplyUnitPriceToType(item.type, parsed)
+                                } else {
+                                    onUpdateUnitPrice(item.localId, parsed)
+                                }
                                 showPriceDialog = false
+                                applyToAllSameType = false
                             },
                         ) { Text("Apply", color = PrimaryBlue, fontWeight = FontWeight.SemiBold) }
                     }

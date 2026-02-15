@@ -59,7 +59,7 @@ class DashboardQueryService
             ->leftJoinSub($refundSubquery, 'refund_totals', function ($join): void {
                 $join->on('refund_totals.sale_item_id', '=', 'sale_items.id');
             })
-            ->where('sales.status', '!=', 'VOIDED');
+            ->whereNotIn('sales.status', ['VOIDED', 'REFUNDED']);
 
         if (isset($filters['date_from'])) {
             $query->whereRaw($this->saleDateExpression() . ' >= ?', [$filters['date_from']]);
@@ -89,6 +89,97 @@ class DashboardQueryService
             'gross_profit' => $grossSales - $totalCost,
             'net_sales' => $grossSales,
         ];
+    }
+
+    private function adjustedSalesSummaryByStatus(array $filters = []): array
+    {
+        $statuses = ['OPEN', 'PARTIAL', 'COMPLETED', 'PARTIALLY_REFUNDED', 'REFUNDED', 'VOIDED'];
+
+        $countsQuery = DB::table('sales')
+            ->select('status')
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('status');
+
+        if (isset($filters['date_from'])) {
+            $countsQuery->whereRaw($this->saleDateExpression() . ' >= ?', [$filters['date_from']]);
+        }
+        if (isset($filters['date_to'])) {
+            $countsQuery->whereRaw($this->saleDateExpression() . ' <= ?', [$filters['date_to']]);
+        }
+
+        $countsByStatus = $countsQuery->get()->keyBy('status');
+
+        $refundsByStatusQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->select('sales.status')
+            ->selectRaw('COALESCE(SUM(refunds.refund_amount), 0) as total_refunded')
+            ->groupBy('sales.status');
+
+        if (isset($filters['date_from'])) {
+            $refundsByStatusQuery->whereRaw($this->saleDateExpression() . ' >= ?', [$filters['date_from']]);
+        }
+        if (isset($filters['date_to'])) {
+            $refundsByStatusQuery->whereRaw($this->saleDateExpression() . ' <= ?', [$filters['date_to']]);
+        }
+
+        $refundsByStatus = $refundsByStatusQuery->get()->keyBy('status');
+
+        $refundSubquery = DB::table('refund_items')
+            ->select('sale_item_id')
+            ->selectRaw('SUM(quantity) as refunded_qty')
+            ->groupBy('sale_item_id');
+
+        $rawRemainingQtyExpr = "(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0) - COALESCE(refund_totals.refunded_qty, 0))";
+        $remainingQtyExpr = "(CASE WHEN {$rawRemainingQtyExpr} > 0 THEN {$rawRemainingQtyExpr} ELSE 0 END)";
+        $qtyRatioExpr = "CASE WHEN sale_items.quantity > 0 THEN ($remainingQtyExpr / sale_items.quantity) ELSE 0 END";
+        $adjustedRevenueExpr = "(sale_items.line_total * ($qtyRatioExpr))";
+        $fallbackUnitCostExpr = "COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)";
+        $adjustedCostExpr = "COALESCE((sale_items.total_cost * ($qtyRatioExpr)), (($remainingQtyExpr) * COALESCE(sale_items.unit_cost, $fallbackUnitCostExpr)))";
+
+        $adjustedByStatusQuery = DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('product_variants', 'sale_items.product_variant_id', '=', 'product_variants.id')
+            ->leftJoinSub($refundSubquery, 'refund_totals', function ($join): void {
+                $join->on('refund_totals.sale_item_id', '=', 'sale_items.id');
+            })
+            ->whereNotIn('sales.status', ['VOIDED', 'REFUNDED'])
+            ->select('sales.status')
+            ->selectRaw("COALESCE(SUM($adjustedRevenueExpr), 0) as gross_sales")
+            ->selectRaw("COALESCE(SUM($adjustedCostExpr), 0) as total_cost")
+            ->groupBy('sales.status');
+
+        if (isset($filters['date_from'])) {
+            $adjustedByStatusQuery->whereRaw($this->saleDateExpression() . ' >= ?', [$filters['date_from']]);
+        }
+        if (isset($filters['date_to'])) {
+            $adjustedByStatusQuery->whereRaw($this->saleDateExpression() . ' <= ?', [$filters['date_to']]);
+        }
+
+        $adjustedByStatus = $adjustedByStatusQuery->get()->keyBy('status');
+
+        $summary = [];
+        foreach ($statuses as $status) {
+            $count = (int) ($countsByStatus[$status]->count ?? 0);
+            $grossSales = (float) ($adjustedByStatus[$status]->gross_sales ?? 0);
+            $totalCost = (float) ($adjustedByStatus[$status]->total_cost ?? 0);
+            $totalRefunded = (float) ($refundsByStatus[$status]->total_refunded ?? 0);
+
+            if ($status === 'VOIDED' || $status === 'REFUNDED') {
+                $grossSales = 0.0;
+                $totalCost = 0.0;
+            }
+
+            $summary[$status] = [
+                'count' => $count,
+                'gross_sales' => $grossSales,
+                'total_cost' => $totalCost,
+                'gross_profit' => $grossSales - $totalCost,
+                'total_refunded' => $totalRefunded,
+                'net_sales' => max(0, $grossSales - $totalRefunded),
+            ];
+        }
+
+        return $summary;
     }
 
     /**
@@ -128,8 +219,8 @@ class DashboardQueryService
         $monthFilters = ['date_from' => $thisMonth->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
         $monthTotals = $this->adjustedSalesTotals($monthFilters);
 
-        // Sales by status (all time for now, can be filtered)
-        $salesByStatus = $this->salesReportService->getSummaryByStatus([]);
+        // Sales by status (all time) using adjusted totals so refunds/cancellations/voids reflect immediately
+        $salesByStatus = $this->adjustedSalesSummaryByStatus([]);
 
         return [
             'today' => $todayTotals,
@@ -154,38 +245,45 @@ class DashboardQueryService
         // Today
         $todayFilters = ['date_from' => $today->format('Y-m-d'), 'date_to' => $today->format('Y-m-d')];
         $todayPayments = $this->paymentsReportService->getTotalPaymentsReceived($todayFilters);
+        $todayRefunds = $this->paymentsReportService->getTotalRefunds($todayFilters);
         $todayOutstanding = $this->paymentsReportService->getOutstandingBalances($todayFilters);
         $todayCounts = $this->paymentsReportService->getPaymentCounts($todayFilters);
 
         // This Week
         $weekFilters = ['date_from' => $thisWeek->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
         $weekPayments = $this->paymentsReportService->getTotalPaymentsReceived($weekFilters);
+        $weekRefunds = $this->paymentsReportService->getTotalRefunds($weekFilters);
         $weekOutstanding = $this->paymentsReportService->getOutstandingBalances($weekFilters);
         $weekCounts = $this->paymentsReportService->getPaymentCounts($weekFilters);
 
         // This Month
         $monthFilters = ['date_from' => $thisMonth->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
         $monthPayments = $this->paymentsReportService->getTotalPaymentsReceived($monthFilters);
+        $monthRefunds = $this->paymentsReportService->getTotalRefunds($monthFilters);
         $monthOutstanding = $this->paymentsReportService->getOutstandingBalances($monthFilters);
         $monthCounts = $this->paymentsReportService->getPaymentCounts($monthFilters);
 
         return [
             'today' => [
-                'total_payments' => $todayPayments,
+                // Show net cash movement: payments minus refunds.
+                'total_payments' => $todayPayments - $todayRefunds,
+                'total_refunded' => $todayRefunds,
                 'outstanding_balances' => $todayOutstanding,
                 'fully_paid_count' => $todayCounts['fully_paid'],
                 'partially_paid_count' => $todayCounts['partially_paid'],
                 'unpaid_count' => $todayCounts['unpaid'],
             ],
             'this_week' => [
-                'total_payments' => $weekPayments,
+                'total_payments' => $weekPayments - $weekRefunds,
+                'total_refunded' => $weekRefunds,
                 'outstanding_balances' => $weekOutstanding,
                 'fully_paid_count' => $weekCounts['fully_paid'],
                 'partially_paid_count' => $weekCounts['partially_paid'],
                 'unpaid_count' => $weekCounts['unpaid'],
             ],
             'this_month' => [
-                'total_payments' => $monthPayments,
+                'total_payments' => $monthPayments - $monthRefunds,
+                'total_refunded' => $monthRefunds,
                 'outstanding_balances' => $monthOutstanding,
                 'fully_paid_count' => $monthCounts['fully_paid'],
                 'partially_paid_count' => $monthCounts['partially_paid'],

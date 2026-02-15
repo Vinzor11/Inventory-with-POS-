@@ -7,12 +7,15 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
+import com.hims.nativeapp.core.DataInvalidationManager
+import com.hims.nativeapp.core.GlobalEvent
+import com.hims.nativeapp.core.GlobalEventBus
+import com.hims.nativeapp.core.RefreshKeys
 import com.hims.nativeapp.data.local.AppDatabase
 import com.hims.nativeapp.data.model.AddDeliveryRequest
 import com.hims.nativeapp.data.model.AddPaymentRequest
 import com.hims.nativeapp.data.model.CancelSaleItemRequest
 import com.hims.nativeapp.data.model.CookedCopraSaleRequest
-import com.hims.nativeapp.data.model.CreateRefundRequest
 import com.hims.nativeapp.data.model.Delivery
 import com.hims.nativeapp.data.model.DeliveryForSaleData
 import com.hims.nativeapp.data.model.DeliveryItem
@@ -46,8 +49,14 @@ import com.hims.nativeapp.data.network.ApiClient
 import com.hims.nativeapp.data.network.SessionStore
 import com.hims.nativeapp.data.repository.BootstrapSnapshot
 import com.hims.nativeapp.data.repository.BootstrapRepository
+import com.hims.nativeapp.data.repository.DashboardRepository
+import com.hims.nativeapp.data.repository.InventoryRepository
+import com.hims.nativeapp.data.repository.InventorySummaryQuery
 import com.hims.nativeapp.data.repository.OutboxEventTypes
 import com.hims.nativeapp.data.repository.OutboxRepository
+import com.hims.nativeapp.data.repository.PosRepository
+import com.hims.nativeapp.data.repository.SalesListQuery
+import com.hims.nativeapp.data.repository.SalesRepository
 import com.hims.nativeapp.domain.DomainAction
 import com.hims.nativeapp.domain.EmitImpact
 import com.hims.nativeapp.startup.StartupCoordinator
@@ -59,6 +68,8 @@ import com.hims.nativeapp.ui.PosCartItem
 import com.hims.nativeapp.ui.WeighDraftItem
 import com.hims.nativeapp.ui.WeighCartItem
 import com.hims.nativeapp.util.formatQty
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.UUID
@@ -67,15 +78,23 @@ import retrofit2.HttpException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val deactivatedAccountMessage = "Your account has been deactivated. Contact an administrator."
+    private val autoRefreshDebounceMs = 400L
 
     private val sessionStore = SessionStore(application)
     private val api = ApiClient.create(sessionStore)
     private val gson = Gson()
     private val cacheDb = AppDatabase.getInstance(application)
+    private val invalidationManager = DataInvalidationManager
+    private val globalEventBus = GlobalEventBus
     private val bootstrapRepository = BootstrapRepository(api, cacheDb, gson)
     private val outboxRepository = OutboxRepository(api, cacheDb, gson)
+    private val posRepository = PosRepository(api, bootstrapRepository, invalidationManager)
+    private val salesRepository = SalesRepository(api, invalidationManager, globalEventBus)
+    private val inventoryRepository = InventoryRepository(api, invalidationManager)
+    private val dashboardRepository = DashboardRepository(api, invalidationManager)
     private val startupCoordinator = StartupCoordinator(sessionStore, bootstrapRepository)
     private var startupCollectorAttached = false
+    private var dashboardRefreshInFlight = false
 
     var uiState by mutableStateOf(
         AppUiState(
@@ -87,6 +106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     init {
+        observeGlobalEvents()
         if (uiState.isAuthenticated) {
             attachStartupCoordinator()
         }
@@ -95,56 +115,154 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun triggerPostActionRefresh(
         action: DomainAction,
         entityId: Int? = null,
+        affectedVariantIds: Set<Int> = emptySet(),
+        reason: String = "local",
     ) {
+        val keys = keysForAction(action = action, entityId = entityId, affectedVariantIds = affectedVariantIds)
         viewModelScope.launch {
             runCatching {
                 EmitImpact.emit(
                     action = action,
-                    reason = "local",
+                    reason = reason,
                     entityId = entityId,
                 )
             }
+
+            if (keys.isEmpty()) {
+                return@launch
+            }
+
+            invalidationManager.invalidate(*keys.toTypedArray())
+            globalEventBus.emit(
+                GlobalEvent.DataInvalidated(
+                    affectedKeys = keys,
+                    reason = reason,
+                    entityId = entityId,
+                ),
+            )
+
+            when (action) {
+                DomainAction.SALE_CREATED_DELIVERY,
+                DomainAction.DELIVERY_MARKED_DELIVERED,
+                -> refreshDeliveriesSilently()
+
+                DomainAction.PRODUCT_UPDATED -> refreshProductsMenuSilently()
+                DomainAction.WEIGH_IN_RECORDED -> refreshWeighInsSilently()
+                else -> Unit
+            }
         }
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun observeGlobalEvents() {
+        viewModelScope.launch {
+            globalEventBus.events
+                .debounce(autoRefreshDebounceMs)
+                .collect { event ->
+                    when (event) {
+                        is GlobalEvent.DataInvalidated -> refreshVisibleTabIfAffected(event.affectedKeys)
+                        is GlobalEvent.RefundCompleted -> refreshVisibleTabIfAffected(event.affectedKeys)
+                    }
+                }
+        }
+    }
+
+    private fun refreshVisibleTabIfAffected(affectedKeys: Set<String>) {
+        if (affectedKeys.isEmpty()) {
+            return
+        }
+        val currentTab = uiState.selectedTab
+        if (!keysAffectTab(currentTab, affectedKeys)) {
+            return
+        }
+        onScreenFocused(currentTab)
+    }
+
+    private fun keysAffectTab(
+        tab: AppTab,
+        keys: Set<String>,
+    ): Boolean {
+        return when (tab) {
+            AppTab.POS -> keys.contains(RefreshKeys.POS_SUMMARY)
+            AppTab.SALES -> keys.contains(RefreshKeys.SALES_LIST) || keys.any { key -> key.startsWith("SALE_DETAIL_") }
+            AppTab.INVENTORY ->
+                keys.contains(RefreshKeys.INVENTORY_SUMMARY) ||
+                    keys.any { key -> key.startsWith(RefreshKeys.INVENTORY_PRODUCT_PREFIX) }
+            AppTab.DASHBOARD -> keys.contains(RefreshKeys.DASHBOARD_METRICS)
+            else -> false
+        }
+    }
+
+    private fun keysForAction(
+        action: DomainAction,
+        entityId: Int?,
+        affectedVariantIds: Set<Int>,
+    ): Set<String> {
+        val keys = mutableSetOf<String>()
 
         when (action) {
             DomainAction.SALE_COMPLETED_WALK_IN -> {
-                refreshPosSilently()
-                refreshInventorySilently()
-                refreshSalesSilently()
-                refreshDashboardSilently()
+                keys += RefreshKeys.SALES_LIST
+                keys += RefreshKeys.DASHBOARD_METRICS
+                keys += RefreshKeys.POS_SUMMARY
+                keys += RefreshKeys.INVENTORY_SUMMARY
             }
+
             DomainAction.SALE_CREATED_DELIVERY -> {
-                refreshSalesSilently()
-                refreshDeliveriesSilently()
-                refreshDashboardSilently()
+                keys += RefreshKeys.SALES_LIST
+                keys += RefreshKeys.DASHBOARD_METRICS
+                keys += RefreshKeys.POS_SUMMARY
             }
+
+            DomainAction.SALE_PAYMENT_ADDED -> {
+                keys += RefreshKeys.SALES_LIST
+                keys += RefreshKeys.DASHBOARD_METRICS
+            }
+
             DomainAction.SALE_REFUNDED,
             DomainAction.SALE_VOIDED,
-            DomainAction.DELIVERY_MARKED_DELIVERED -> {
-                refreshPosSilently()
-                refreshInventorySilently()
-                refreshSalesSilently()
-                refreshDeliveriesSilently()
-                refreshDashboardSilently()
+            DomainAction.DELIVERY_MARKED_DELIVERED,
+            -> {
+                keys += RefreshKeys.SALES_LIST
+                keys += RefreshKeys.DASHBOARD_METRICS
+                keys += RefreshKeys.POS_SUMMARY
+                keys += RefreshKeys.INVENTORY_SUMMARY
             }
-            DomainAction.WEIGH_IN_RECORDED -> {
-                refreshWeighInsSilently()
-                refreshDashboardSilently()
-            }
+
             DomainAction.STOCK_ADJUSTMENT -> {
-                refreshPosSilently()
-                refreshInventorySilently()
-                refreshDashboardSilently()
+                keys += RefreshKeys.INVENTORY_SUMMARY
+                keys += RefreshKeys.POS_SUMMARY
+                keys += RefreshKeys.DASHBOARD_METRICS
             }
+
             DomainAction.PRODUCT_UPDATED -> {
-                refreshProductsMenuSilently()
-                refreshPosSilently()
-                refreshInventorySilently()
+                keys += RefreshKeys.INVENTORY_SUMMARY
+                keys += RefreshKeys.POS_SUMMARY
             }
+
+            DomainAction.WEIGH_IN_RECORDED -> {
+                keys += RefreshKeys.DASHBOARD_METRICS
+            }
+
             DomainAction.CUSTOMER_CREATED -> {
-                refreshSalesSilently()
+                keys += RefreshKeys.SALES_LIST
             }
         }
+
+        if (entityId != null && action in setOf(
+                DomainAction.SALE_COMPLETED_WALK_IN,
+                DomainAction.SALE_CREATED_DELIVERY,
+                DomainAction.SALE_PAYMENT_ADDED,
+                DomainAction.SALE_REFUNDED,
+                DomainAction.SALE_VOIDED,
+            )
+        ) {
+            keys += RefreshKeys.saleDetail(entityId)
+        }
+
+        keys += affectedVariantIds.map { variantId -> RefreshKeys.inventoryProduct(variantId) }
+
+        return keys
     }
 
     private fun attachStartupCoordinator() {
@@ -230,6 +348,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 null
             }
 
+        posRepository.primeCache(snapshot.posSeed)
+
         uiState =
             uiState.copy(
                 isLoading = false,
@@ -275,53 +395,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         uiState = uiState.copy(selectedTab = tab, searchQuery = "")
+        onScreenFocused(tab)
+    }
+
+    fun onScreenFocused(tab: AppTab = uiState.selectedTab) {
+        if (!uiState.isAuthenticated) {
+            return
+        }
         when (tab) {
-            AppTab.SALES -> {
-                if (uiState.sales.isEmpty()) {
-                    refreshSales()
+            AppTab.POS -> {
+                if (uiState.products.isEmpty() || invalidationManager.isInvalid(RefreshKeys.POS_SUMMARY)) {
+                    refreshPos(forceRefresh = false)
                 }
             }
+
+            AppTab.SALES -> {
+                if (uiState.sales.isEmpty() || invalidationManager.isInvalid(RefreshKeys.SALES_LIST)) {
+                    refreshSales(forceRefresh = false)
+                }
+            }
+
+            AppTab.INVENTORY -> {
+                if (uiState.inventoryVariants.isEmpty() || isInventoryStale()) {
+                    refreshInventory(forceRefresh = false)
+                }
+            }
+
+            AppTab.DASHBOARD -> {
+                val showLoading =
+                    uiState.dashboardData == null || invalidationManager.isInvalid(RefreshKeys.DASHBOARD_METRICS)
+                refreshDashboard(forceRefresh = true, showLoading = showLoading)
+            }
+
             AppTab.DELIVERY -> {
                 if (uiState.deliveryQueue.isEmpty()) {
                     refreshDeliveries()
                 }
             }
+
             AppTab.WEIGH -> {
                 if (uiState.weighIns.isEmpty()) {
                     refreshWeighIns()
                 }
             }
-            AppTab.INVENTORY -> {
-                if (uiState.inventoryVariants.isEmpty()) {
-                    refreshInventory()
-                }
-            }
+
             AppTab.DELIVERY_MENU -> {
                 if (uiState.deliveries.isEmpty() || uiState.deliveryQueue.isEmpty()) {
                     refreshDeliveries()
                 }
             }
+
             AppTab.PRODUCT_MENU -> {
                 if (uiState.productMenuItems.isEmpty()) {
                     refreshProductsMenu()
                 }
             }
-            AppTab.DASHBOARD -> {
-                if (uiState.dashboardData == null) {
-                    refreshDashboard()
-                }
-            }
+
             AppTab.WEIGH_MENU -> {
                 if (uiState.weighIns.isEmpty()) {
                     refreshWeighIns()
                 }
             }
+
             AppTab.PRODUCTION_MENU -> {
                 if (uiState.productionRuns.isEmpty()) {
                     refreshProductionRuns()
                 }
             }
-            else -> Unit
+
+            AppTab.MORE -> Unit
         }
     }
 
@@ -387,21 +529,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshCurrentTab() {
         when (uiState.selectedTab) {
-            AppTab.POS -> refreshStartup(force = true)
+            AppTab.POS -> refreshPos(forceRefresh = true)
             AppTab.DELIVERY -> refreshDeliveries()
-            AppTab.SALES -> refreshSales()
+            AppTab.SALES -> refreshSales(forceRefresh = true)
             AppTab.WEIGH -> refreshWeighIns()
             AppTab.WEIGH_MENU -> refreshWeighIns()
-            AppTab.INVENTORY -> refreshInventory()
+            AppTab.INVENTORY -> refreshInventory(forceRefresh = true)
             AppTab.DELIVERY_MENU -> refreshDeliveries()
             AppTab.PRODUCT_MENU -> refreshProductsMenu()
             AppTab.PRODUCTION_MENU -> refreshProductionRuns()
-            AppTab.DASHBOARD -> refreshDashboard()
+            AppTab.DASHBOARD -> refreshDashboard(forceRefresh = true)
             AppTab.MORE -> {
                 refreshAll()
             }
         }
     }
+
+    private fun isInventoryStale(): Boolean {
+        return invalidationManager.isInvalid(RefreshKeys.INVENTORY_SUMMARY) ||
+            invalidationManager.hasInvalidWithPrefix(RefreshKeys.INVENTORY_PRODUCT_PREFIX)
+    }
+
+    private fun buildSalesQuery(): SalesListQuery =
+        SalesListQuery(
+            status = asQueryValue(uiState.salesStatusFilter),
+            paymentStatus = asQueryValue(uiState.salesPaymentStatusFilter),
+            deliveryStatus = asQueryValue(uiState.salesDeliveryStatusFilter),
+            dateFrom = asDateQuery(uiState.salesDateFrom),
+            dateTo = asDateQuery(uiState.salesDateTo),
+        )
 
     fun refreshStartup(force: Boolean = true) {
         viewModelScope.launch {
@@ -424,7 +580,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 salesDateFrom = dateFrom.trim(),
                 salesDateTo = dateTo.trim(),
             )
-        refreshSales()
+        refreshSales(forceRefresh = true)
     }
 
     fun applySalesReportFilters(
@@ -574,13 +730,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           isActionLoading = false,
                           successMessage = response.message ?: "Stock added successfully.",
                       )
-                  EmitImpact.emit(
+                  triggerPostActionRefresh(
                       action = DomainAction.STOCK_ADJUSTMENT,
-                      reason = "local",
                       entityId = variantId,
+                      affectedVariantIds = setOf(variantId),
                   )
-                  refreshInventory()
-                  refreshPos()
                   onSuccess()
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
@@ -659,13 +813,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           isActionLoading = false,
                           successMessage = response.message ?: "Inventory adjusted successfully.",
                       )
-                  EmitImpact.emit(
+                  triggerPostActionRefresh(
                       action = DomainAction.STOCK_ADJUSTMENT,
-                      reason = "local",
                       entityId = variantId,
+                      affectedVariantIds = setOf(variantId),
                   )
-                  refreshInventory()
-                  refreshPos()
                   onSuccess()
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
@@ -755,11 +907,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         successMessage = response.message ?: "Cooked copra stock-out recorded.",
                     )
 
-                refreshInventory()
+                triggerPostActionRefresh(
+                    action = DomainAction.STOCK_ADJUSTMENT,
+                    affectedVariantIds =
+                        updatedSummary
+                            ?.variantId
+                            ?.let { variantId -> setOf(variantId) }
+                            .orEmpty(),
+                )
                 refreshProductionRuns()
-                if (isCurrentUserAdmin()) {
-                    refreshDashboard()
-                }
                 onSuccess(response.data.batchCode)
             } catch (e: Exception) {
                 uiState =
@@ -816,10 +972,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           isActionLoading = false,
                           successMessage = response.message ?: "Product created successfully.",
                       )
-                  EmitImpact.emit(action = DomainAction.PRODUCT_UPDATED, reason = "local")
+                  triggerPostActionRefresh(
+                      action = DomainAction.PRODUCT_UPDATED,
+                  )
                   refreshProductsMenu()
-                  refreshPos()
-                  refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -879,14 +1035,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           isActionLoading = false,
                           successMessage = response.message ?: "Product updated successfully.",
                       )
-                  EmitImpact.emit(
+                  triggerPostActionRefresh(
                       action = DomainAction.PRODUCT_UPDATED,
-                      reason = "local",
                       entityId = productId,
                   )
                   refreshProductsMenu()
-                  refreshPos()
-                  refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -911,8 +1064,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Stock tracking updated.",
                     )
+                triggerPostActionRefresh(
+                    action = DomainAction.PRODUCT_UPDATED,
+                    entityId = productId,
+                )
                 refreshProductsMenu()
-                refreshPos()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -937,8 +1093,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Product status updated.",
                     )
+                triggerPostActionRefresh(
+                    action = DomainAction.PRODUCT_UPDATED,
+                    entityId = productId,
+                )
                 refreshProductsMenu()
-                refreshPos()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -991,9 +1150,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Variant created successfully.",
                     )
+                triggerPostActionRefresh(
+                    action = DomainAction.PRODUCT_UPDATED,
+                    entityId = productId,
+                    affectedVariantIds = setOf(response.data.id),
+                )
                 refreshProductsMenu()
-                refreshPos()
-                refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1048,9 +1210,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Variant updated successfully.",
                     )
+                triggerPostActionRefresh(
+                    action = DomainAction.PRODUCT_UPDATED,
+                    entityId = productId,
+                    affectedVariantIds = setOf(variantId),
+                )
                 refreshProductsMenu()
-                refreshPos()
-                refreshInventory()
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1630,8 +1795,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             try {
-                val response = api.getSale(saleId)
-                onSuccess(response.data)
+                onSuccess(salesRepository.getSale(saleId))
             } catch (e: Exception) {
                 uiState = uiState.copy(errorMessage = networkErrorMessage(e))
             }
@@ -1736,7 +1900,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Payment added successfully.",
                     )
-                refreshSales()
+                triggerPostActionRefresh(
+                    action = DomainAction.SALE_PAYMENT_ADDED,
+                    entityId = saleId,
+                )
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1766,6 +1933,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uiState = uiState.copy(errorMessage = "Only administrators can cancel delivery sale items.")
             return
         }
+        val affectedVariantIds =
+            uiState.sales
+                .firstOrNull { sale -> sale.id == saleId }
+                ?.items
+                .orEmpty()
+                .firstOrNull { item -> item.id == saleItemId }
+                ?.productVariant
+                ?.id
+                ?.let { variantId -> setOf(variantId) }
+                .orEmpty()
 
         viewModelScope.launch {
             uiState = uiState.copy(isActionLoading = true, errorMessage = null, successMessage = null)
@@ -1788,6 +1965,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 triggerPostActionRefresh(
                     action = DomainAction.SALE_REFUNDED,
                     entityId = saleId,
+                    affectedVariantIds = affectedVariantIds,
                 )
                 onSuccess()
             } catch (e: Exception) {
@@ -1865,9 +2043,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             uiState = uiState.copy(isActionLoading = true, errorMessage = null)
             try {
-                val response = api.getRefundForSale(saleId)
+                val response = salesRepository.getRefundForSale(saleId)
                 uiState = uiState.copy(isActionLoading = false)
-                onSuccess(response.data)
+                onSuccess(response)
             } catch (e: Exception) {
                 uiState =
                     uiState.copy(
@@ -1912,28 +2090,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val refundItemIds = normalizedItems.map { item -> item.saleItemId }.toSet()
+        val affectedVariantIds =
+            uiState.sales
+                .firstOrNull { sale -> sale.id == saleId }
+                ?.items
+                .orEmpty()
+                .filter { saleItem -> refundItemIds.contains(saleItem.id) }
+                .map { saleItem -> saleItem.productVariant.id }
+                .toSet()
+
         viewModelScope.launch {
             uiState = uiState.copy(isActionLoading = true, errorMessage = null, successMessage = null)
             try {
-                val response =
-                    api.createRefund(
-                    saleId = saleId,
-                    request =
-                        CreateRefundRequest(
-                            items = normalizedItems,
-                            reason = normalizedReason,
-                            refundMethod = normalizedMethod,
-                        ),
-                )
+                val resolvedVariantIds =
+                    if (affectedVariantIds.isNotEmpty()) {
+                        affectedVariantIds
+                    } else {
+                        runCatching {
+                            salesRepository
+                                .getRefundForSale(saleId)
+                                .refundableItems
+                                .filter { refundable ->
+                                    refundItemIds.contains(refundable.saleItem.id)
+                                }
+                                .map { refundable -> refundable.saleItem.productVariant.id }
+                                .toSet()
+                        }.getOrDefault(emptySet())
+                    }
+                val successMessage =
+                    salesRepository.refundSale(
+                        saleId = saleId,
+                        items = normalizedItems,
+                        reason = normalizedReason,
+                        refundMethod = normalizedMethod,
+                        affectedInventoryVariantIds = resolvedVariantIds,
+                    )
                 uiState =
                     uiState.copy(
                         isActionLoading = false,
-                        successMessage = response.message ?: "Refund processed successfully.",
+                        successMessage = successMessage ?: "Refund processed successfully.",
                     )
-                triggerPostActionRefresh(
-                    action = DomainAction.SALE_REFUNDED,
-                    entityId = saleId,
-                )
+                runCatching {
+                    EmitImpact.emit(
+                        action = DomainAction.SALE_REFUNDED,
+                        reason = "local",
+                        entityId = saleId,
+                    )
+                }
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -2328,29 +2532,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshPosSilently() {
-        viewModelScope.launch {
-            runCatching {
-                val products = api.getPosProducts().data
-                bootstrapRepository.updatePosSeed(products)
-                uiState = uiState.copy(products = products)
-            }
-        }
+        refreshPos(forceRefresh = true, showLoading = false)
     }
 
     private fun refreshSalesSilently() {
-        viewModelScope.launch {
-            runCatching {
-                val updatedSales =
-                    api.getSales(
-                        status = asQueryValue(uiState.salesStatusFilter),
-                        paymentStatus = asQueryValue(uiState.salesPaymentStatusFilter),
-                        deliveryStatus = asQueryValue(uiState.salesDeliveryStatusFilter),
-                        dateFrom = asDateQuery(uiState.salesDateFrom),
-                        dateTo = asDateQuery(uiState.salesDateTo),
-                    ).data.data
-                uiState = uiState.copy(sales = updatedSales)
-            }
-        }
+        refreshSales(forceRefresh = true, showLoading = false)
     }
 
     private fun refreshDeliveriesSilently() {
@@ -2369,27 +2555,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshInventorySilently() {
-        viewModelScope.launch {
-            runCatching {
-                val categories = api.getPosCategories().data
-                val variants =
-                    api.getInventory(
-                        categoryId = uiState.inventoryCategoryFilter,
-                        lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
-                    ).data.data
-                val dashboard = runCatching { api.getInventoryDashboard().data }.getOrNull()
-                val movements = runCatching { api.getInventoryMovements(perPage = 200).data.data }.getOrNull()
-                val cookedSummary = runCatching { api.getCookedCopraStockSummary().data }.getOrNull()
-                uiState =
-                    uiState.copy(
-                        inventoryCategories = categories,
-                        inventoryVariants = variants,
-                        inventoryDashboard = dashboard ?: uiState.inventoryDashboard,
-                        inventoryMovements = movements ?: uiState.inventoryMovements,
-                        cookedCopraStockSummary = cookedSummary ?: uiState.cookedCopraStockSummary,
-                    )
-            }
-        }
+        refreshInventory(forceRefresh = true, showLoading = false)
     }
 
     private fun refreshProductsMenuSilently() {
@@ -2403,15 +2569,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshDashboardSilently() {
-        if (!isCurrentUserAdmin()) {
-            return
-        }
-        viewModelScope.launch {
-            runCatching {
-                val dashboard = api.getDashboard().data
-                uiState = uiState.copy(dashboardData = dashboard)
-            }
-        }
+        refreshDashboard(forceRefresh = true, showLoading = false)
+    }
+
+    private fun applyDashboardAccessDeniedState() {
+        uiState =
+            uiState.copy(
+                isRefreshing = false,
+                dashboardData = null,
+                dashboardAccessDenied = true,
+                dashboardStatusMessage = "Dashboard is not available for this account.",
+                errorMessage = "Dashboard is available to administrators only.",
+            )
+    }
+
+    private fun applyDashboardErrorState(message: String) {
+        uiState =
+            uiState.copy(
+                isRefreshing = false,
+                dashboardAccessDenied = false,
+                dashboardStatusMessage = "Dashboard data unavailable. Pull to refresh.",
+                errorMessage = message,
+            )
     }
 
     private fun refreshWeighInsSilently() {
@@ -2448,22 +2627,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
             try {
-                val products = api.getPosProducts().data
-                bootstrapRepository.updatePosSeed(products)
-                var inventoryCategories = api.getPosCategories().data
-                val inventoryVariants =
-                    api.getInventory(
-                        categoryId = uiState.inventoryCategoryFilter,
-                        lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
-                    ).data.data
+                val products = posRepository.getPosSummary(forceRefresh = true)
+                val inventorySummary =
+                    inventoryRepository.getSummary(
+                        query =
+                            InventorySummaryQuery(
+                                categoryId = uiState.inventoryCategoryFilter,
+                                lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
+                            ),
+                        forceRefresh = true,
+                    )
                 val sales =
-                    api.getSales(
-                        status = asQueryValue(uiState.salesStatusFilter),
-                        paymentStatus = asQueryValue(uiState.salesPaymentStatusFilter),
-                        deliveryStatus = asQueryValue(uiState.salesDeliveryStatusFilter),
-                        dateFrom = asDateQuery(uiState.salesDateFrom),
-                        dateTo = asDateQuery(uiState.salesDateTo),
-                    ).data.data
+                    salesRepository.getSales(
+                        query = buildSalesQuery(),
+                        forceRefresh = true,
+                    )
                 val deliveryQueue =
                     fetchDeliveryQueueRecords(
                         statusFilter = uiState.deliveryStatusFilter,
@@ -2476,8 +2654,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ).data.data
                 var userName = uiState.userName
                 var userRole = canonicalizeRole(uiState.userRole)
-                var inventoryDashboard = uiState.inventoryDashboard
-                var inventoryMovements = uiState.inventoryMovements
+                var inventoryDashboard = inventorySummary.dashboard
+                val inventoryMovements = inventorySummary.movements
                 var weighIns = uiState.weighIns
                 var weighPrices = uiState.weighPrices
                 var weighProducts = uiState.weighProducts
@@ -2485,8 +2663,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var productMenuItems = uiState.productMenuItems
                 var dashboardData = uiState.dashboardData
                 var productionRuns = uiState.productionRuns
-                var cookedCopraStockSummary = uiState.cookedCopraStockSummary
+                val cookedCopraStockSummary = inventorySummary.cookedCopraStockSummary
                 val nonBlockingErrors = mutableListOf<String>()
+                inventorySummary.warningMessage?.let { warning ->
+                    nonBlockingErrors += warning
+                }
 
                 try {
                     val currentUser = api.getAuthenticatedUser().data
@@ -2504,34 +2685,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    inventoryCategories = api.getPosCategories().data
+                    productMenuItems = api.getProducts(perPage = 100).data.data
                 } catch (e: Exception) {
                     if (isUnauthorized(e)) {
                         throw e
                     }
-                    nonBlockingErrors.add("Product categories failed to load. ${networkErrorMessage(e)}")
-                }
-
-                try {
-                    inventoryDashboard = api.getInventoryDashboard().data
-                } catch (e: Exception) {
-                    if (isUnauthorized(e)) {
-                        throw e
-                    }
-                    if (!isForbidden(e)) {
-                        nonBlockingErrors.add("Inventory dashboard failed to load. ${networkErrorMessage(e)}")
-                    }
-                }
-
-                try {
-                    inventoryMovements = api.getInventoryMovements(perPage = 200).data.data
-                } catch (e: Exception) {
-                    if (isUnauthorized(e)) {
-                        throw e
-                    }
-                    if (!isForbidden(e)) {
-                        nonBlockingErrors.add("Inventory history failed to load. ${networkErrorMessage(e)}")
-                    }
+                    nonBlockingErrors.add("Products menu failed to load. ${networkErrorMessage(e)}")
                 }
 
                 try {
@@ -2558,7 +2717,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    dashboardData = api.getDashboard().data
+                    val dashboardMetrics = dashboardRepository.getMetrics(forceRefresh = true)
+                    dashboardData = dashboardMetrics.dashboard
+                    inventoryDashboard = dashboardMetrics.inventoryDashboard ?: inventoryDashboard
                 } catch (e: Exception) {
                     if (isUnauthorized(e)) {
                         throw e
@@ -2579,19 +2740,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                try {
-                    cookedCopraStockSummary = api.getCookedCopraStockSummary().data
-                } catch (e: Exception) {
-                    if (isUnauthorized(e)) {
-                        throw e
-                    }
-                    if (isForbidden(e)) {
-                        cookedCopraStockSummary = null
-                    } else {
-                        nonBlockingErrors.add("Cooked copra stock summary failed to load. ${networkErrorMessage(e)}")
-                    }
-                }
-
                 uiState =
                     uiState.copy(
                         isLoading = false,
@@ -2600,8 +2748,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         userRole = userRole,
                         products = products,
                         productMenuItems = productMenuItems,
-                        inventoryVariants = inventoryVariants,
-                        inventoryCategories = inventoryCategories,
+                        inventoryVariants = inventorySummary.variants,
+                        inventoryCategories = inventorySummary.categories,
                         inventoryDashboard = inventoryDashboard,
                         cookedCopraStockSummary = cookedCopraStockSummary,
                         inventoryMovements = inventoryMovements,
@@ -2631,37 +2779,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun refreshPos() {
+    private fun refreshPos(
+        forceRefresh: Boolean = true,
+        showLoading: Boolean = true,
+    ) {
         viewModelScope.launch {
-            uiState = uiState.copy(isRefreshing = true, errorMessage = null)
+            uiState =
+                if (showLoading) {
+                    uiState.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    uiState.copy(errorMessage = null)
+                }
             try {
-                val products = api.getPosProducts().data
-                bootstrapRepository.updatePosSeed(products)
-                uiState = uiState.copy(products = products, isRefreshing = false)
+                val products = posRepository.getPosSummary(forceRefresh = forceRefresh)
+                uiState =
+                    uiState.copy(
+                        products = products,
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                    )
             } catch (e: Exception) {
-                uiState = uiState.copy(isRefreshing = false, errorMessage = networkErrorMessage(e))
+                uiState =
+                    uiState.copy(
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                        errorMessage = networkErrorMessage(e),
+                    )
             }
         }
     }
 
-    private fun refreshSales() {
+    private fun refreshSales(
+        forceRefresh: Boolean = true,
+        showLoading: Boolean = true,
+    ) {
         viewModelScope.launch {
-            uiState = uiState.copy(isRefreshing = true, errorMessage = null)
+            uiState =
+                if (showLoading) {
+                    uiState.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    uiState.copy(errorMessage = null)
+                }
             try {
                 uiState =
                     uiState.copy(
-                        sales =
-                            api.getSales(
-                                status = asQueryValue(uiState.salesStatusFilter),
-                                paymentStatus = asQueryValue(uiState.salesPaymentStatusFilter),
-                                deliveryStatus = asQueryValue(uiState.salesDeliveryStatusFilter),
-                                dateFrom = asDateQuery(uiState.salesDateFrom),
-                                dateTo = asDateQuery(uiState.salesDateTo),
-                            ).data.data,
-                        isRefreshing = false,
+                        sales = salesRepository.getSales(query = buildSalesQuery(), forceRefresh = forceRefresh),
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
                     )
             } catch (e: Exception) {
-                uiState = uiState.copy(isRefreshing = false, errorMessage = networkErrorMessage(e))
+                uiState =
+                    uiState.copy(
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                        errorMessage = networkErrorMessage(e),
+                    )
             }
         }
     }
@@ -2689,61 +2857,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun refreshInventory() {
+    private fun refreshInventory(
+        forceRefresh: Boolean = true,
+        showLoading: Boolean = true,
+    ) {
         viewModelScope.launch {
-            uiState = uiState.copy(isRefreshing = true, errorMessage = null)
+            uiState =
+                if (showLoading) {
+                    uiState.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    uiState.copy(errorMessage = null)
+                }
             try {
-                val categories = api.getPosCategories().data
-                val variants =
-                    api.getInventory(
-                        categoryId = uiState.inventoryCategoryFilter,
-                        lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
-                    ).data.data
-
-                var dashboard = uiState.inventoryDashboard
-                var movements = uiState.inventoryMovements
-                var cookedCopraStockSummary = uiState.cookedCopraStockSummary
-                val nonBlockingErrors = mutableListOf<String>()
-                try {
-                    dashboard = api.getInventoryDashboard().data
-                } catch (e: Exception) {
-                    if (isForbidden(e)) {
-                        dashboard = null
-                    } else {
-                        nonBlockingErrors.add("Inventory dashboard failed to load. ${networkErrorMessage(e)}")
-                    }
-                }
-
-                try {
-                    movements = api.getInventoryMovements(perPage = 200).data.data
-                } catch (e: Exception) {
-                    if (!isForbidden(e)) {
-                        nonBlockingErrors.add("Inventory history failed to load. ${networkErrorMessage(e)}")
-                    }
-                }
-
-                try {
-                    cookedCopraStockSummary = api.getCookedCopraStockSummary().data
-                } catch (e: Exception) {
-                    if (isForbidden(e)) {
-                        cookedCopraStockSummary = null
-                    } else {
-                        nonBlockingErrors.add("Cooked copra stock summary failed to load. ${networkErrorMessage(e)}")
-                    }
-                }
+                val summary =
+                    inventoryRepository.getSummary(
+                        query =
+                            InventorySummaryQuery(
+                                categoryId = uiState.inventoryCategoryFilter,
+                                lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
+                            ),
+                        forceRefresh = forceRefresh,
+                    )
 
                 uiState =
                     uiState.copy(
-                        inventoryCategories = categories,
-                        inventoryVariants = variants,
-                        inventoryDashboard = dashboard,
-                        cookedCopraStockSummary = cookedCopraStockSummary,
-                        inventoryMovements = movements,
-                        isRefreshing = false,
-                        errorMessage = nonBlockingErrors.firstOrNull(),
+                        inventoryCategories = summary.categories,
+                        inventoryVariants = summary.variants,
+                        inventoryDashboard = summary.dashboard,
+                        cookedCopraStockSummary = summary.cookedCopraStockSummary,
+                        inventoryMovements = summary.movements,
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                        errorMessage = summary.warningMessage,
                     )
             } catch (e: Exception) {
-                uiState = uiState.copy(isRefreshing = false, errorMessage = networkErrorMessage(e))
+                uiState =
+                    uiState.copy(
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                        errorMessage = networkErrorMessage(e),
+                    )
             }
         }
     }
@@ -2790,85 +2941,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun refreshDashboard() {
+    private fun refreshDashboard(
+        forceRefresh: Boolean = true,
+        showLoading: Boolean = true,
+    ) {
+        if (dashboardRefreshInFlight) {
+            return
+        }
+        dashboardRefreshInFlight = true
         viewModelScope.launch {
             uiState =
-                uiState.copy(
-                    isRefreshing = true,
-                    errorMessage = null,
-                    dashboardAccessDenied = false,
-                    dashboardStatusMessage = null,
-                )
-            try {
-                val currentUser = api.getAuthenticatedUser().data
-                val canonicalRole = canonicalizeRole(currentUser.role)
-                val token = sessionStore.getToken()
-                if (!token.isNullOrBlank()) {
-                    sessionStore.saveSession(token, currentUser.name, canonicalRole)
-                }
-                uiState =
+                if (showLoading) {
                     uiState.copy(
-                        userName = currentUser.name,
-                        userRole = canonicalRole,
+                        isRefreshing = true,
+                        errorMessage = null,
+                        dashboardAccessDenied = false,
+                        dashboardStatusMessage = null,
                     )
-
-                if (!isAdminRole(canonicalRole)) {
-                    uiState =
-                        uiState.copy(
-                            isRefreshing = false,
-                            dashboardData = null,
-                            dashboardAccessDenied = true,
-                            dashboardStatusMessage = "Dashboard is not available for this account.",
-                            errorMessage = "Dashboard is available to administrators only.",
-                        )
+                } else {
+                    uiState.copy(
+                        errorMessage = null,
+                        dashboardAccessDenied = false,
+                        dashboardStatusMessage = null,
+                    )
+                }
+            try {
+                if (!isCurrentUserAdmin()) {
+                    applyDashboardAccessDeniedState()
                     return@launch
                 }
 
-                val dashboardData = api.getDashboard().data
-                var inventoryDashboard = uiState.inventoryDashboard
-                var nonBlockingError: String? = null
-
-                try {
-                    inventoryDashboard = api.getInventoryDashboard().data
-                } catch (e: Exception) {
-                    if (isUnauthorized(e)) {
-                        throw e
-                    }
-                    if (isForbidden(e)) {
-                        inventoryDashboard = null
-                    } else {
-                        nonBlockingError = "Inventory dashboard failed to load. ${networkErrorMessage(e)}"
-                    }
-                }
+                val result = dashboardRepository.getMetrics(forceRefresh = forceRefresh)
 
                 uiState =
                     uiState.copy(
-                        dashboardData = dashboardData,
-                        inventoryDashboard = inventoryDashboard,
+                        dashboardData = result.dashboard,
+                        inventoryDashboard = result.inventoryDashboard,
                         dashboardAccessDenied = false,
                         dashboardStatusMessage = null,
-                        isRefreshing = false,
-                        errorMessage = nonBlockingError,
+                        isRefreshing = if (showLoading) false else uiState.isRefreshing,
+                        errorMessage = null,
                     )
             } catch (e: Exception) {
                 if (isForbidden(e)) {
-                    uiState =
-                        uiState.copy(
-                            isRefreshing = false,
-                            dashboardData = null,
-                            dashboardAccessDenied = true,
-                            dashboardStatusMessage = "Dashboard is not available for this account.",
-                            errorMessage = "Dashboard is available to administrators only.",
-                        )
+                    applyDashboardAccessDeniedState()
                 } else {
-                    uiState =
-                        uiState.copy(
-                            isRefreshing = false,
-                            dashboardAccessDenied = false,
-                            dashboardStatusMessage = "Dashboard data unavailable. Pull to refresh.",
-                            errorMessage = networkErrorMessage(e),
-                        )
+                    if (showLoading) {
+                        applyDashboardErrorState(networkErrorMessage(e))
+                    } else {
+                        uiState = uiState.copy(errorMessage = networkErrorMessage(e))
+                    }
                 }
+            } finally {
+                dashboardRefreshInFlight = false
             }
         }
     }

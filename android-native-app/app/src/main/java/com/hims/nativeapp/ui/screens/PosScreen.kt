@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.ShoppingCart
@@ -668,6 +669,22 @@ private fun PosCartSheet(
                                     fontSize = 13.sp,
                                 )
                             }
+                            Icon(
+                                imageVector = Icons.Outlined.Edit,
+                                contentDescription = "Edit price",
+                                tint = PrimaryBlue,
+                                modifier =
+                                    Modifier
+                                        .size(18.dp)
+                                        .clickable(enabled = !isActionLoading) {
+                                            priceEditVariantId = item.variantId
+                                            priceEditInput =
+                                                formatCompactNumber(
+                                                    item.customUnitPrice ?: linePricing.unitDisplayPrice,
+                                                )
+                                        },
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text =
                                     if (linePricing.batchQty > 0.0 && linePricing.batchUnitPrice != null) {
@@ -741,19 +758,6 @@ private fun PosCartSheet(
                                 fontSize = 12.sp,
                                 modifier = Modifier.weight(1f),
                             )
-                            TextButton(
-                                enabled = !isActionLoading,
-                                onClick = {
-                                    priceEditVariantId = item.variantId
-                                    priceEditInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
-                                },
-                            ) {
-                                Text(
-                                    text = if (item.customUnitPrice != null) "Edit*" else "Edit",
-                                    color = PrimaryBlue,
-                                    fontSize = 12.sp,
-                                )
-                            }
                             Text(
                                 text = formatPeso(linePricing.lineTotal),
                                 color = TextCharcoal,

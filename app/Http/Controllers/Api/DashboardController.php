@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Services\DashboardQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -26,16 +25,18 @@ class DashboardController extends Controller
             abort(403, 'Only administrators can access the dashboard.');
         }
 
-        $dashboardData = Cache::remember(
-            key: 'api:dashboard:v1',
-            ttl: now()->addSeconds(90),
-            callback: fn (): array => $this->dashboardService->getDashboardData(),
-        );
+        // Dashboard must reflect write actions (sale/payment/refund/void/cancel) immediately.
+        // Avoid API-level TTL caching here to prevent stale KPIs after checkout.
+        $dashboardData = $this->dashboardService->getDashboardData();
 
-        return response()->json([
-            'success' => true,
-            'data' => $dashboardData,
-        ]);
+        return response()
+            ->json([
+                'success' => true,
+                'data' => $dashboardData,
+            ])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 }
 

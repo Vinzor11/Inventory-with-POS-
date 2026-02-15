@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hims.nativeapp.data.model.WeighInTransaction
 import com.hims.nativeapp.ui.AppTab
@@ -114,6 +116,7 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
         }
     }
     LaunchedEffect(state.selectedTab) {
+        viewModel.onScreenFocused(state.selectedTab)
         if (state.selectedTab != AppTab.INVENTORY && isInventoryHistoryMode) {
             isInventoryHistoryMode = false
         }
@@ -124,6 +127,10 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
             showSalesReportScreen = false
             showWeighReportScreen = false
         }
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onScreenFocused(state.selectedTab)
     }
 
     if (!state.isAuthenticated) {
@@ -360,6 +367,7 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         onUpdateDraftWeight = viewModel::updateWeighDraftWeight,
                         onUpdateDraftCount = viewModel::updateWeighDraftCount,
                         onUpdateDraftUnitPrice = viewModel::updateWeighDraftUnitPrice,
+                        onApplyDraftUnitPriceToType = viewModel::applyWeighDraftUnitPriceByType,
                         onRemoveDraftItem = viewModel::removeWeighDraftItem,
                         onClearDraft = viewModel::clearWeighDraft,
                         onProcessDraft = { pin, onSuccess ->

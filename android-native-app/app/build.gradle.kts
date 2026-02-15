@@ -4,7 +4,36 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+import java.util.Properties
+
 val apiBaseUrl = (findProperty("API_BASE_URL") as String?) ?: "http://10.0.2.2:8000/"
+
+val keystoreProperties = Properties()
+val keystoreFile = rootProject.file("keystore.properties")
+if (keystoreFile.exists()) {
+    keystoreFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun resolveSecret(key: String): String? {
+    val fromFile = keystoreProperties.getProperty(key)
+    if (!fromFile.isNullOrBlank()) return fromFile
+
+    val envKey = key.uppercase()
+    val fromEnv = System.getenv(envKey)
+    if (!fromEnv.isNullOrBlank()) return fromEnv
+
+    return null
+}
+
+val releaseStoreFile = resolveSecret("storeFile")
+val releaseStorePassword = resolveSecret("storePassword")
+val releaseKeyAlias = resolveSecret("keyAlias")
+val releaseKeyPassword = resolveSecret("keyPassword")
+val hasReleaseSigning =
+    !releaseStoreFile.isNullOrBlank() &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.hims.nativeapp"
@@ -20,9 +49,23 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
