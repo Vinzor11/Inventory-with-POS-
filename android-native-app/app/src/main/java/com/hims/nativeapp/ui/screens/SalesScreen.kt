@@ -898,6 +898,8 @@ private fun SaleCard(
     val visibleItems = if (expanded) sale.items else listOfNotNull(firstItem)
     val hasMoreItems = sale.items.size > 1
     val totalItems = sale.items.size
+    val paymentSummary = remember(sale) { computeSalePaymentSummary(sale) }
+    val amountDisplay = remember(sale, paymentSummary) { computeSaleAmountDisplay(sale, paymentSummary) }
     val actions =
         buildList {
             add(
@@ -1029,12 +1031,40 @@ private fun SaleCard(
                     fontSize = 13.sp,
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "Total $totalItems item${if (totalItems == 1) "" else "s"}: ${formatPeso(sale.total)}",
-                    color = TextCharcoal,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Total $totalItems item${if (totalItems == 1) "" else "s"}:",
+                        color = TextCharcoal,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (amountDisplay.showAdjusted) {
+                            Text(
+                                text = formatPeso(amountDisplay.originalTotal),
+                                color = Color(0xFF6B7280),
+                                fontSize = 14.sp,
+                                textDecoration = TextDecoration.LineThrough,
+                            )
+                            Text(
+                                text = formatPeso(amountDisplay.adjustedTotal),
+                                color = TextCharcoal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                            )
+                        } else {
+                            Text(
+                                text = formatPeso(amountDisplay.originalTotal),
+                                color = TextCharcoal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                            )
+                        }
+                    }
+                }
             }
 
             if (expanded) {
@@ -1401,6 +1431,7 @@ private fun SaleDetailsFullScreen(
             }
 
             SaleDetailsSection(title = "Items (${sale.items.size})") {
+                val amountDisplay = remember(sale, paymentSummary) { computeSaleAmountDisplay(sale, paymentSummary) }
                 sale.items.forEachIndexed { index, item ->
                     SaleItemRow(
                         item = item,
@@ -1445,12 +1476,29 @@ private fun SaleDetailsFullScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        text = formatPeso(sale.total),
-                        color = TextCharcoal,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (amountDisplay.showAdjusted) {
+                            Text(
+                                text = formatPeso(amountDisplay.originalTotal),
+                                color = Color(0xFF6B7280),
+                                fontSize = 14.sp,
+                                textDecoration = TextDecoration.LineThrough,
+                            )
+                            Text(
+                                text = formatPeso(amountDisplay.adjustedTotal),
+                                color = TextCharcoal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                            )
+                        } else {
+                            Text(
+                                text = formatPeso(amountDisplay.originalTotal),
+                                color = TextCharcoal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -1881,12 +1929,19 @@ private data class SalePaymentSummary(
     val amountToReturn: Double,
 )
 
+private data class SaleAmountDisplay(
+    val originalTotal: Double,
+    val adjustedTotal: Double,
+    val showAdjusted: Boolean,
+)
+
 private fun computeSalePaymentSummary(
     sale: Sale,
     payments: List<SalePayment> = safeSalePayments(sale),
     refunds: List<SaleRefund> = safeSaleRefunds(sale),
 ): SalePaymentSummary {
     val totalCanceledDeductions = computeTotalCanceledDeductions(sale)
+    val totalRefundedFromItems = computeTotalRefundDeductions(sale)
     val totalPaidFromPayments =
         payments
             .filter { it.amount > 0 }
@@ -1896,7 +1951,7 @@ private fun computeSalePaymentSummary(
             .filter { it.amount < 0 }
             .sumOf { kotlin.math.abs(it.amount) }
     val totalRefundedFromRefunds = refunds.sumOf { it.refundAmount }
-    val totalRefunded = maxOf(totalRefundedFromRefunds, totalRefundedFromPayments)
+    val totalRefunded = maxOf(totalRefundedFromRefunds, totalRefundedFromPayments, totalRefundedFromItems)
     val netTotal = (sale.total - totalRefunded).coerceAtLeast(0.0)
     val totalPaid =
         when {
@@ -1920,6 +1975,34 @@ private fun computeSalePaymentSummary(
     )
 }
 
+private fun computeSaleAmountDisplay(
+    sale: Sale,
+    paymentSummary: SalePaymentSummary = computeSalePaymentSummary(sale),
+): SaleAmountDisplay {
+    val saleStatus = sale.status.uppercase()
+    val paymentStatus = sale.paymentStatus.orEmpty().uppercase()
+    val forceZero = saleStatus == "VOIDED" || saleStatus == "REFUNDED" || paymentStatus == "REFUNDED"
+    val totalRefunded = paymentSummary.totalRefunded.coerceAtLeast(0.0)
+    val totalCanceledDeductions = paymentSummary.totalCanceledDeductions.coerceAtLeast(0.0)
+    val adjustedTotal =
+        if (forceZero) {
+            0.0
+        } else {
+            (sale.total - totalRefunded - totalCanceledDeductions).coerceAtLeast(0.0)
+        }
+    val showAdjusted =
+        forceZero ||
+            saleStatus == "PARTIALLY_REFUNDED" ||
+            paymentStatus == "PARTIALLY_REFUNDED" ||
+            totalRefunded > 0.0 ||
+            totalCanceledDeductions > 0.0
+    return SaleAmountDisplay(
+        originalTotal = sale.total.coerceAtLeast(0.0),
+        adjustedTotal = adjustedTotal,
+        showAdjusted = showAdjusted,
+    )
+}
+
 private fun canceledDeductionForItem(item: SaleItem): Double {
     val totalQty = item.quantity
     val canceledQty = (item.canceledQuantity ?: 0.0).coerceAtLeast(0.0)
@@ -1932,6 +2015,19 @@ private fun canceledDeductionForItem(item: SaleItem): Double {
 }
 
 private fun computeTotalCanceledDeductions(sale: Sale): Double = sale.items.sumOf { canceledDeductionForItem(it) }.coerceAtLeast(0.0)
+
+private fun refundedDeductionForItem(item: SaleItem): Double {
+    val totalQty = item.quantity
+    val refundedQty = (item.refundedQuantity ?: 0.0).coerceAtLeast(0.0)
+    if (totalQty <= 0.0 || refundedQty <= 0.0) {
+        return 0.0
+    }
+    val effectiveRefundedQty = refundedQty.coerceAtMost(totalQty)
+    val lineTotal = if (item.lineTotal > 0.0) item.lineTotal else (item.unitPrice * totalQty)
+    return ((effectiveRefundedQty / totalQty) * lineTotal).coerceAtLeast(0.0)
+}
+
+private fun computeTotalRefundDeductions(sale: Sale): Double = sale.items.sumOf { refundedDeductionForItem(it) }.coerceAtLeast(0.0)
 
 @Suppress("UNCHECKED_CAST")
 private fun safeSalePayments(sale: Sale): List<SalePayment> = (sale.payments as? List<SalePayment>).orEmpty()
