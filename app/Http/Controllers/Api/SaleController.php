@@ -32,7 +32,7 @@ class SaleController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        $query = Sale::with(['cashier', 'voidedBy', 'items.productVariant.product.category', 'refunds.items', 'deliveries.items'])
+        $query = Sale::with(['cashier', 'voidedBy', 'items.productVariant.product.category', 'refunds.items', 'refunds.processedBy', 'deliveries.items'])
             ->withCount('items')
             ->orderBy('created_at', 'desc');
 
@@ -70,17 +70,21 @@ class SaleController extends Controller
         // Match web sales listing behavior: expose whether a delivery sale still has
         // deliverable quantity after delivered/refunded/canceled adjustments.
         $sales->getCollection()->transform(function ($sale) {
-            if (!$sale->is_for_delivery) {
-                $sale->has_remaining_delivery = false;
-                return $sale;
-            }
-
             $refundedQuantities = [];
             foreach ($sale->refunds as $refund) {
                 foreach ($refund->items as $refundItem) {
                     $saleItemId = $refundItem->sale_item_id;
                     $refundedQuantities[$saleItemId] = ($refundedQuantities[$saleItemId] ?? 0) + $refundItem->quantity;
                 }
+            }
+
+            foreach ($sale->items as $saleItem) {
+                $saleItem->setAttribute('refunded_quantity', (float) ($refundedQuantities[$saleItem->id] ?? 0));
+            }
+
+            if (!$sale->is_for_delivery) {
+                $sale->has_remaining_delivery = false;
+                return $sale;
             }
 
             $hasRemaining = false;
@@ -353,6 +357,17 @@ class SaleController extends Controller
             'adjustments.processedBy',
         ]);
 
+        $refundedQuantities = [];
+        foreach ($sale->refunds as $refund) {
+            foreach ($refund->items as $refundItem) {
+                $saleItemId = $refundItem->sale_item_id;
+                $refundedQuantities[$saleItemId] = ($refundedQuantities[$saleItemId] ?? 0) + $refundItem->quantity;
+            }
+        }
+        foreach ($sale->items as $saleItem) {
+            $saleItem->setAttribute('refunded_quantity', (float) ($refundedQuantities[$saleItem->id] ?? 0));
+        }
+
         return response()->json([
             'success' => true,
             'data' => $sale,
@@ -494,15 +509,25 @@ class SaleController extends Controller
             'items.productVariant.product',
             'cashier',
             'payments.receivedBy',
+            'refunds',
         ]);
 
-        $totalPaid = $sale->total_paid;
-        $saleTotal = $sale->total;
-        $balance = max(0, $saleTotal - $totalPaid);
-        $change = max(0, $totalPaid - $saleTotal);
+        $totalPaid = (float) $sale->payments->sum('amount');
+        $saleTotal = (float) $sale->total;
+        $refundedFromRefunds = (float) $sale->refunds->sum('refund_amount');
+        $refundedFromNegativePayments = (float) $sale->payments
+            ->filter(fn ($payment) => (float) $payment->amount < 0)
+            ->sum(fn ($payment) => abs((float) $payment->amount));
+        $totalRefunded = max($refundedFromRefunds, $refundedFromNegativePayments);
+        $netTotal = max(0, $saleTotal - $totalRefunded);
+        $balance = max(0, $netTotal - max(0, $totalPaid));
+        $change = max(0, max(0, $totalPaid) - $netTotal);
 
         $paymentSummary = [
-            'total_paid' => $totalPaid,
+            'gross_total' => $saleTotal,
+            'total_refunded' => $totalRefunded,
+            'net_total' => $netTotal,
+            'total_paid' => max(0, $totalPaid),
             'balance' => $balance,
             'change' => $change,
         ];

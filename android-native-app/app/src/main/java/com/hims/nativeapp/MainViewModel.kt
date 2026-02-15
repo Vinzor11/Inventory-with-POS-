@@ -1795,7 +1795,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             try {
-                onSuccess(salesRepository.getSale(saleId))
+                onSuccess(salesRepository.getSale(saleId, forceRefresh = true))
             } catch (e: Exception) {
                 uiState = uiState.copy(errorMessage = networkErrorMessage(e))
             }

@@ -77,12 +77,26 @@ class ReceiptPrintService
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
         $lines[] = $this->separator('-');
-        $lines[] = $this->formatAmountLineBold("TOTAL DUE", (float)$sale->total);
+        $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
+        $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
+        $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
+        $lines[] = $this->formatAmountLineBold("TOTAL DUE", $grossTotal);
+        if ($totalRefunded > 0) {
+            $lines[] = $this->formatAmountLine("Total Refunded", -$totalRefunded);
+            $lines[] = $this->formatAmountLineBold("NET TOTAL", $netTotal);
+        }
         
         // Payment info
         $totalPaid = $paymentSummary['total_paid'] ?? 0;
         if ($totalPaid > 0) {
-            $paymentMethod = ucfirst(strtolower($sale->payments->first()?->payment_method ?? 'Cash'));
+            $paymentMethod =
+                ucfirst(
+                    strtolower(
+                        $sale->payments
+                            ->first(fn ($payment) => (float) $payment->amount > 0)
+                            ?->payment_method ?? 'Cash'
+                    )
+                );
             $lines[] = $this->formatAmountLine($paymentMethod, $totalPaid);
             $change = $paymentSummary['change'] ?? 0;
             if ($change > 0) {
@@ -189,12 +203,26 @@ class ReceiptPrintService
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
         $lines[] = $this->separator('-');
-        $lines[] = $this->formatAmountLine("TOTAL DUE", (float)$sale->total);
+        $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
+        $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
+        $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
+        $lines[] = $this->formatAmountLine("TOTAL DUE", $grossTotal);
+        if ($totalRefunded > 0) {
+            $lines[] = $this->formatAmountLine("Total Refunded", -$totalRefunded);
+            $lines[] = $this->formatAmountLine("NET TOTAL", $netTotal);
+        }
         
         // Payment info
         $totalPaid = $paymentSummary['total_paid'] ?? 0;
         if ($totalPaid > 0) {
-            $paymentMethod = ucfirst(strtolower($sale->payments->first()?->payment_method ?? 'Cash'));
+            $paymentMethod =
+                ucfirst(
+                    strtolower(
+                        $sale->payments
+                            ->first(fn ($payment) => (float) $payment->amount > 0)
+                            ?->payment_method ?? 'Cash'
+                    )
+                );
             $lines[] = $this->formatAmountLine($paymentMethod, $totalPaid);
             $change = $paymentSummary['change'] ?? 0;
             if ($change > 0) {

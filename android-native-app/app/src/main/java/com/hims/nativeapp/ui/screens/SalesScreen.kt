@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -423,6 +424,7 @@ fun SalesScreen(
                                 onFetchSaleDetails(sale.id) { details ->
                                     detailsSale = details
                                 }
+                                onPrintReceipt(sale.id)
                                 addPaymentSale = null
                                 addPaymentAmount = ""
                                 addPaymentNotes = ""
@@ -731,7 +733,13 @@ fun SalesScreen(
             error = refundError,
             isActionLoading = isActionLoading,
             onQtyChange = { saleItemId, value ->
-                refundQty = refundQty + (saleItemId to value)
+                val maxQty =
+                    data.refundableItems
+                        .firstOrNull { refundable -> refundable.saleItem.id == saleItemId }
+                        ?.let { refundable -> floor(refundable.refundableQuantity).toInt().coerceAtLeast(0) }
+                        ?: 0
+                val normalized = normalizeRefundQtyInput(value, maxQty)
+                refundQty = refundQty + (saleItemId to normalized)
             },
             onReasonChange = { refundReason = it },
             onMethodChange = { refundMethod = it },
@@ -1107,11 +1115,17 @@ private fun SaleItemRow(
     val lineTotal = if (item.lineTotal > 0.0) item.lineTotal else (item.unitPrice * item.quantity)
     val originalLineTotal = (item.unitPrice * item.quantity).takeIf { it > 0.0 } ?: lineTotal
     val canceledQty = (item.canceledQuantity ?: 0.0).coerceAtLeast(0.0)
+    val refundedQty = (item.refundedQuantity ?: 0.0).coerceAtLeast(0.0)
     val itemStatus = item.itemStatus.orEmpty().uppercase()
     val isCanceled = itemStatus == "CANCELED"
     val hasCanceledQty = canceledQty > 0.0
+    val hasRefundedQty = refundedQty > 0.0
+    val canceledDeduction = canceledDeductionForItem(item)
+    val refundedDeduction = refundedDeductionForItem(item)
+    val adjustedLineTotal = (lineTotal - canceledDeduction - refundedDeduction).coerceAtLeast(0.0)
+    val displayLineTotal = if (showAdjustmentBreakdown && (hasCanceledQty || hasRefundedQty)) adjustedLineTotal else lineTotal
     val isPartiallyAdjusted = itemStatus == "PARTIAL_ADJUSTED"
-    val shouldStrikeAmount = hasCanceledQty || isCanceled || forceStrikeAmount
+    val shouldStrikeAmount = hasCanceledQty || hasRefundedQty || isCanceled || forceStrikeAmount
     val statusLabel =
         when {
             isCanceled -> "Canceled"
@@ -1189,9 +1203,8 @@ private fun SaleItemRow(
                 Spacer(modifier = Modifier.height(3.dp))
                 if (showAdjustmentBreakdown) {
                     val effectiveCanceledQty = canceledQty.coerceAtMost(item.quantity)
-                    val deductedAmount = canceledDeductionForItem(item)
                     val finalQty = (item.quantity - effectiveCanceledQty).coerceAtLeast(0.0)
-                    val finalTotal = (lineTotal - deductedAmount).coerceAtLeast(0.0)
+                    val finalTotal = (lineTotal - canceledDeduction).coerceAtLeast(0.0)
 
                     Text(
                         text = "Canceled: x${formatQty(effectiveCanceledQty)}",
@@ -1200,7 +1213,7 @@ private fun SaleItemRow(
                         fontSize = 12.sp,
                     )
                     Text(
-                        text = "Deducted: ${formatPeso(deductedAmount)}",
+                        text = "Deducted: ${formatPeso(canceledDeduction)}",
                         color = Color(0xFFDC2626),
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
@@ -1226,6 +1239,24 @@ private fun SaleItemRow(
                     )
                 }
             }
+            if (refundedQty > 0.0) {
+                Spacer(modifier = Modifier.height(3.dp))
+                val effectiveRefundedQty = refundedQty.coerceAtMost(item.quantity)
+                Text(
+                    text = "Refunded: x${formatQty(effectiveRefundedQty)}",
+                    color = Color(0xFFDC2626),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                )
+                if (showAdjustmentBreakdown) {
+                    Text(
+                        text = "Refunded Amount: ${formatPeso(refundedDeduction)}",
+                        color = Color(0xFFDC2626),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "Qty: x${formatQty(item.quantity)}",
@@ -1235,11 +1266,19 @@ private fun SaleItemRow(
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = formatPeso(if (hasCanceledQty) originalLineTotal else lineTotal),
+                    text = formatPeso(if (shouldStrikeAmount) originalLineTotal else displayLineTotal),
                     color = if (shouldStrikeAmount) Color(0xFF6B7280) else TextCharcoal,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     textDecoration = if (shouldStrikeAmount) TextDecoration.LineThrough else null,
+                )
+            }
+            if (showAdjustmentBreakdown && (hasCanceledQty || hasRefundedQty) && adjustedLineTotal < originalLineTotal) {
+                Text(
+                    text = "Adjusted Total: ${formatPeso(adjustedLineTotal)}",
+                    color = Color(0xFF065F46),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
                 )
             }
         }
@@ -1303,7 +1342,7 @@ private fun SaleDetailsFullScreen(
                 }
             }
 
-            if (canAddPayment(sale)) {
+            if (canAddPayment(sale, paymentSummary)) {
                 Button(
                     onClick = { onRequestAddPayment(sale) },
                     enabled = !isActionLoading,
@@ -1739,7 +1778,7 @@ private fun RefundSheet(
     onDismiss: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1748,7 +1787,7 @@ private fun RefundSheet(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 320.dp, max = 640.dp)
+                    .fillMaxHeight(0.92f)
                     .verticalScroll(rememberScrollState())
                     .imePadding()
                     .navigationBarsPadding()
@@ -1774,7 +1813,7 @@ private fun RefundSheet(
                 )
             } else {
                 Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     data.refundableItems.forEach { refundable ->
@@ -1800,9 +1839,9 @@ private fun RefundSheet(
                                 OutlinedTextField(
                                     value = qtyInputs[refundable.saleItem.id].orEmpty(),
                                     onValueChange = { onQtyChange(refundable.saleItem.id, it) },
-                                    modifier = Modifier.width(108.dp),
+                                    modifier = Modifier.width(88.dp),
                                     singleLine = true,
-                                    label = { Text("Qty") },
+                                    placeholder = { Text("Qty") },
                                     keyboardOptions =
                                         KeyboardOptions(
                                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
@@ -1916,7 +1955,7 @@ private fun computeSalePaymentSummary(
 ): SalePaymentSummary {
     val totalCanceledDeductions = computeTotalCanceledDeductions(sale)
     val totalRefundedFromItems = computeTotalRefundDeductions(sale)
-    val totalPaidFromPayments =
+    val totalPaidFromPositivePayments =
         payments
             .filter { it.amount > 0 }
             .sumOf { it.amount }
@@ -1929,15 +1968,16 @@ private fun computeSalePaymentSummary(
     val netTotal = (sale.total - totalRefunded).coerceAtLeast(0.0)
     val totalPaid =
         when {
-            totalPaidFromPayments > 0.0 -> totalPaidFromPayments
+            totalPaidFromPositivePayments > 0.0 || totalRefundedFromPayments > 0.0 ->
+                (totalPaidFromPositivePayments - totalRefunded).coerceAtLeast(0.0)
             sale.paymentStatus.orEmpty().uppercase() == "FULLY_PAID" -> netTotal
             else -> 0.0
         }
     val balance = (netTotal - totalPaid).coerceAtLeast(0.0)
-    val totalOverpayment = (totalPaid - netTotal).coerceAtLeast(0.0)
-    val baseNetTotal = (netTotal + totalCanceledDeductions).coerceAtLeast(0.0)
-    val change = (totalPaid - baseNetTotal).coerceAtLeast(0.0)
-    val amountToReturn = (totalOverpayment - change).coerceAtLeast(0.0)
+    val change = (totalPaid - netTotal).coerceAtLeast(0.0)
+    val expectedReturn = (totalPaidFromPositivePayments - netTotal).coerceAtLeast(0.0)
+    val amountToReturn =
+        (expectedReturn - totalRefundedFromPayments - change).coerceAtLeast(0.0)
     return SalePaymentSummary(
         totalPaid = totalPaid,
         totalRefunded = totalRefunded,
@@ -2004,6 +2044,18 @@ private fun refundedDeductionForItem(item: SaleItem): Double {
 
 private fun computeTotalRefundDeductions(sale: Sale): Double = sale.items.sumOf { refundedDeductionForItem(it) }.coerceAtLeast(0.0)
 
+private fun normalizeRefundQtyInput(
+    raw: String,
+    maxQty: Int,
+): String {
+    val digits = raw.filter(Char::isDigit)
+    if (digits.isBlank() || maxQty <= 0) {
+        return ""
+    }
+    val value = digits.toIntOrNull() ?: return ""
+    return value.coerceIn(0, maxQty).takeIf { it > 0 }?.toString().orEmpty()
+}
+
 @Suppress("UNCHECKED_CAST")
 private fun safeSalePayments(sale: Sale): List<SalePayment> = (sale.payments as? List<SalePayment>).orEmpty()
 
@@ -2037,9 +2089,15 @@ private fun deliveryStatusColor(status: String?): Color {
     }
 }
 
-private fun canAddPayment(sale: Sale): Boolean {
+private fun canAddPayment(
+    sale: Sale,
+    paymentSummary: SalePaymentSummary,
+): Boolean {
     val saleStatus = sale.status.uppercase()
     val paymentStatus = sale.paymentStatus.orEmpty().uppercase()
+    if (paymentSummary.balance <= 0.009) {
+        return false
+    }
     if (saleStatus == "VOIDED" || saleStatus == "REFUNDED") {
         return false
     }

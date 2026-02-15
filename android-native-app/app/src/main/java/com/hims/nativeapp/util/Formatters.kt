@@ -15,6 +15,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 private val moneyFormat = DecimalFormat("#,##0.00")
 private val dateFormatter = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US)
 private val timeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+private val timeWithSecondsFormatter = DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US)
 private val twentyFourHourFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 private val localDateTimePatterns =
     listOf(
@@ -56,6 +57,16 @@ fun formatDateHeader(dateTime: String): String {
 fun formatTimeLabel(dateTime: String): String {
     return parseLocalDateTime(dateTime)?.format(timeFormatter)?.lowercase(Locale.US)
         ?: extractTimeFallback(dateTime)
+}
+
+fun formatDateTimeLabelWithSeconds(dateTime: String): String {
+    val dateLabel = formatDateHeader(dateTime)
+    val timeLabel =
+        parseLocalDateTime(dateTime)
+            ?.format(timeWithSecondsFormatter)
+            ?.lowercase(Locale.US)
+            ?: formatTimeLabel(dateTime)
+    return "$dateLabel $timeLabel"
 }
 
 private fun extractTimeFallback(dateTime: String): String {

@@ -55,13 +55,8 @@ class SalesRepository(
                 ).data.data
 
             listCache[query] = sales
-            sales.forEach { sale -> detailCache[sale.id] = sale }
 
             invalidationManager.clearInvalid(RefreshKeys.SALES_LIST)
-            val detailKeys = sales.map { sale -> RefreshKeys.saleDetail(sale.id) }
-            if (detailKeys.isNotEmpty()) {
-                invalidationManager.clearInvalid(*detailKeys.toTypedArray())
-            }
             sales
         }
 

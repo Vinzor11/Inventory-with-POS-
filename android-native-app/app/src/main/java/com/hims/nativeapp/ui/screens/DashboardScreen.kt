@@ -37,8 +37,9 @@ import com.hims.nativeapp.ui.theme.BaseWhite
 import com.hims.nativeapp.ui.theme.BorderSoft
 import com.hims.nativeapp.ui.theme.PrimaryBlue
 import com.hims.nativeapp.ui.theme.TextCharcoal
-import com.hims.nativeapp.util.formatDateHeader
+import com.hims.nativeapp.util.formatDateTimeLabelWithSeconds
 import com.hims.nativeapp.util.formatPeso
+import com.hims.nativeapp.util.formatQty
 
 @Composable
 fun DashboardScreen(
@@ -99,6 +100,8 @@ fun DashboardScreen(
             inventoryDashboard?.totalValue ?: dashboard.inventory.inventoryValue
         }
     val hardwarePotentialProfit = dashboard.inventory.potentialProfit
+    val todayTotalWeighKg = dashboard.weighIns.today.byType.values.sumOf { it.totalWeightKg }.coerceAtLeast(0.0)
+    val todayCoconutCount = dashboard.weighIns.today.byType["coconut"]?.totalCount ?: 0.0
 
     LazyColumn(
         modifier =
@@ -110,7 +113,7 @@ fun DashboardScreen(
     ) {
         item("hero") {
             HeroCard(
-                lastUpdated = dashboard.lastUpdated?.let { formatDateHeader(it) } ?: "-",
+                lastUpdated = dashboard.lastUpdated?.let { formatDateTimeLabelWithSeconds(it) } ?: "-",
                 todayGross = dashboard.sales.today.grossSales,
                 todayGrossProfit = dashboard.sales.today.grossProfit,
                 todayWeigh = dashboard.weighIns.today.totalAmount,
@@ -152,13 +155,13 @@ fun DashboardScreen(
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatPill(
-                        label = "Today Gross Rev",
-                        value = formatPeso(dashboard.sales.today.grossSales),
+                        label = "Today's Payments",
+                        value = formatPeso(dashboard.payments.today.totalPayments),
                         modifier = Modifier.weight(1f),
                     )
                     StatPill(
-                        label = "Today Gross Profit",
-                        value = formatPeso(dashboard.sales.today.grossProfit),
+                        label = "Outstanding Balance",
+                        value = formatPeso(dashboard.payments.today.outstandingBalances),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -171,18 +174,6 @@ fun DashboardScreen(
                     StatPill(
                         label = "Month Gross Rev",
                         value = formatPeso(dashboard.sales.thisMonth.grossSales),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatPill(
-                        label = "Today's Payments",
-                        value = formatPeso(dashboard.payments.today.totalPayments),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatPill(
-                        label = "Outstanding Balance",
-                        value = formatPeso(dashboard.payments.today.outstandingBalances),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -203,8 +194,8 @@ fun DashboardScreen(
                         modifier = Modifier.weight(1f),
                     )
                     StatPill(
-                        label = "Today Count",
-                        value = dashboard.weighIns.today.count.toString(),
+                        label = "Today Total Kg",
+                        value = formatQty(todayTotalWeighKg),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -217,6 +208,18 @@ fun DashboardScreen(
                     StatPill(
                         label = "Month Amount",
                         value = formatPeso(dashboard.weighIns.thisMonth.totalAmount),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatPill(
+                        label = "Today Coconut Count",
+                        value = formatQty(todayCoconutCount),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatPill(
+                        label = "Today Weigh-ins",
+                        value = dashboard.weighIns.today.count.toString(),
                         modifier = Modifier.weight(1f),
                     )
                 }
