@@ -513,6 +513,8 @@ private fun PosCartSheet(
     var showPinDialog by remember { mutableStateOf(false) }
     var pinInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
+    var priceEditVariantId by remember { mutableStateOf<Int?>(null) }
+    var priceEditInput by remember { mutableStateOf("") }
 
     BackHandler(enabled = !showPinDialog && !isActionLoading) {
         onDismiss()
@@ -610,12 +612,8 @@ private fun PosCartSheet(
             } else {
                 cartItems.forEachIndexed { index, item ->
                     var qtyInput by remember(item.variantId) { mutableStateOf(formatCompactNumber(item.quantity)) }
-                    var unitPriceInput by remember(item.variantId) { mutableStateOf(item.customUnitPrice?.let(::formatCompactNumber).orEmpty()) }
                     LaunchedEffect(item.quantity) {
                         qtyInput = formatCompactNumber(item.quantity)
-                    }
-                    LaunchedEffect(item.customUnitPrice) {
-                        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
                     }
                     val imageUrl = fullImageUrl(BuildConfig.API_BASE_URL, item.image)
                     val linePricing =
@@ -730,38 +728,6 @@ private fun PosCartSheet(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "Custom Price",
-                                color = Color(0xFF6B7280),
-                                fontSize = 12.sp,
-                                modifier = Modifier.width(88.dp),
-                            )
-                            CompactNumberField(
-                                value = unitPriceInput,
-                                onValueChange = { input ->
-                                    unitPriceInput = input
-                                    val parsed = input.toDoubleOrNull()
-                                    onSetCartUnitPrice(item.variantId, parsed)
-                                },
-                                modifier = Modifier.width(110.dp),
-                                allowDecimal = true,
-                                enabled = !isActionLoading,
-                            )
-                            TextButton(
-                                enabled = !isActionLoading,
-                                onClick = {
-                                    unitPriceInput = ""
-                                    onSetCartUnitPrice(item.variantId, null)
-                                },
-                            ) {
-                                Text("Reset", color = PrimaryBlue, fontSize = 12.sp)
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             val unitPriceLabel =
                                 if (linePricing.batchQty > 0.0 && linePricing.batchUnitPrice != null) {
@@ -775,6 +741,19 @@ private fun PosCartSheet(
                                 fontSize = 12.sp,
                                 modifier = Modifier.weight(1f),
                             )
+                            TextButton(
+                                enabled = !isActionLoading,
+                                onClick = {
+                                    priceEditVariantId = item.variantId
+                                    priceEditInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
+                                },
+                            ) {
+                                Text(
+                                    text = if (item.customUnitPrice != null) "Edit*" else "Edit",
+                                    color = PrimaryBlue,
+                                    fontSize = 12.sp,
+                                )
+                            }
                             Text(
                                 text = formatPeso(linePricing.lineTotal),
                                 color = TextCharcoal,
@@ -1049,6 +1028,58 @@ private fun PosCartSheet(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    priceEditVariantId?.let { variantId ->
+        Dialog(
+            onDismissRequest = {
+                if (!isActionLoading) {
+                    priceEditVariantId = null
+                    priceEditInput = ""
+                }
+            },
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = BaseWhite),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Edit Item Price", color = TextCharcoal, fontWeight = FontWeight.SemiBold)
+                    CompactNumberField(
+                        value = priceEditInput,
+                        onValueChange = { priceEditInput = it },
+                        allowDecimal = true,
+                        enabled = !isActionLoading,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onSetCartUnitPrice(variantId, null)
+                                priceEditVariantId = null
+                                priceEditInput = ""
+                            },
+                        ) { Text("Reset", color = Color(0xFF6B7280)) }
+                        TextButton(
+                            enabled = !isActionLoading,
+                            onClick = {
+                                val parsed = priceEditInput.trim().toDoubleOrNull()
+                                onSetCartUnitPrice(variantId, parsed)
+                                priceEditVariantId = null
+                                priceEditInput = ""
+                            },
+                        ) { Text("Apply", color = PrimaryBlue, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
+            }
         }
     }
 

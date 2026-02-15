@@ -894,10 +894,8 @@ private fun WeighDraftRow(
     LaunchedEffect(item.weightKg) {
         weightInput = formatCompactNumber(item.weightKg ?: 1.0)
     }
+    var showPriceDialog by remember(item.localId) { mutableStateOf(false) }
     var unitPriceInput by remember(item.localId) { mutableStateOf(item.customUnitPrice?.let(::formatCompactNumber).orEmpty()) }
-    LaunchedEffect(item.customUnitPrice) {
-        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
-    }
 
     val title = when (item.type) {
         "cooked_copra" -> "Cooked Copra"
@@ -1013,33 +1011,69 @@ private fun WeighDraftRow(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.End,
             ) {
-                Text(
-                    text = "Custom Price",
-                    color = Color(0xFF6B7280),
-                    fontSize = 12.sp,
-                    modifier = Modifier.width(96.dp),
-                )
-                CompactNumberField(
-                    value = unitPriceInput,
-                    onValueChange = {
-                        unitPriceInput = it
-                        val parsed = it.toDoubleOrNull()
-                        onUpdateUnitPrice(item.localId, parsed)
-                    },
-                    modifier = Modifier.width(110.dp),
-                    allowDecimal = true,
-                    enabled = !isActionLoading,
-                )
                 TextButton(
                     enabled = !isActionLoading,
                     onClick = {
-                        unitPriceInput = ""
-                        onUpdateUnitPrice(item.localId, null)
+                        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
+                        showPriceDialog = true
                     },
                 ) {
-                    Text("Reset", color = PrimaryBlue, fontSize = 12.sp)
+                    Text(
+                        text = if (item.customUnitPrice != null) "Edit*" else "Edit",
+                        color = PrimaryBlue,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
+    }
+
+    if (showPriceDialog) {
+        Dialog(
+            onDismissRequest = {
+                if (!isActionLoading) {
+                    showPriceDialog = false
+                }
+            },
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = BaseWhite),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Edit Weigh Price", color = TextCharcoal, fontWeight = FontWeight.SemiBold)
+                    CompactNumberField(
+                        value = unitPriceInput,
+                        onValueChange = { unitPriceInput = it },
+                        allowDecimal = true,
+                        enabled = !isActionLoading,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onUpdateUnitPrice(item.localId, null)
+                                showPriceDialog = false
+                            },
+                        ) { Text("Reset", color = Color(0xFF6B7280)) }
+                        TextButton(
+                            enabled = !isActionLoading,
+                            onClick = {
+                                val parsed = unitPriceInput.trim().toDoubleOrNull()
+                                onUpdateUnitPrice(item.localId, parsed)
+                                showPriceDialog = false
+                            },
+                        ) { Text("Apply", color = PrimaryBlue, fontWeight = FontWeight.SemiBold) }
+                    }
                 }
             }
         }
