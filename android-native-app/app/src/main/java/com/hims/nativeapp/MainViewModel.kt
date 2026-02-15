@@ -1146,6 +1146,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         uiState = uiState.copy(posCartItems = current)
     }
 
+    fun setPosCartUnitPrice(
+        variantId: Int,
+        unitPrice: Double?,
+    ) {
+        val current = uiState.posCartItems.toMutableList()
+        val index = current.indexOfFirst { it.variantId == variantId }
+        if (index < 0) {
+            return
+        }
+
+        val existing = current[index]
+        val normalized =
+            unitPrice?.let {
+                if (it <= 0.0) {
+                    null
+                } else {
+                    it
+                }
+            }
+
+        current[index] = existing.copy(customUnitPrice = normalized)
+        uiState = uiState.copy(posCartItems = current)
+    }
+
     fun removePosCartItem(variantId: Int) {
         uiState =
             uiState.copy(
@@ -1453,6 +1477,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 PosCheckoutItemRequest(
                                     productVariantId = it.variantId,
                                     quantity = maxOf(0.01, it.quantity),
+                                    unitPrice = it.customUnitPrice,
                                 )
                             },
                         notes = notes.trim().ifBlank { null },
@@ -1488,7 +1513,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     OutboxSaleItemRequest(
                                         productVariantId = it.variantId,
                                         quantity = maxOf(0.01, it.quantity),
-                                        unitPrice = it.unitPrice,
+                                        unitPrice = it.customUnitPrice ?: it.unitPrice,
                                     )
                                 },
                             paymentAmount = maxOf(0.0, paymentAmount),
@@ -1805,6 +1830,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val normalizedReason = reason.trim()
+        if (normalizedReason.isBlank()) {
+            uiState = uiState.copy(errorMessage = "Refund reason is required.")
+            return
+        }
+
+        val normalizedItems =
+            items
+                .filter { it.quantity > 0 }
+                .map { it.copy(quantity = it.quantity.coerceAtLeast(1)) }
+        if (normalizedItems.isEmpty()) {
+            uiState = uiState.copy(errorMessage = "Enter at least one quantity to refund.")
+            return
+        }
+
+        val normalizedMethod = refundMethod.trim().lowercase().ifBlank { "cash" }
+        val allowedMethods = setOf("cash", "card", "gcash", "maya", "store_credit")
+        if (normalizedMethod !in allowedMethods) {
+            uiState = uiState.copy(errorMessage = "Invalid refund method.")
+            return
+        }
+
         viewModelScope.launch {
             uiState = uiState.copy(isActionLoading = true, errorMessage = null, successMessage = null)
             try {
@@ -1813,9 +1860,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     saleId = saleId,
                     request =
                         CreateRefundRequest(
-                            items = items,
-                            reason = reason,
-                            refundMethod = refundMethod,
+                            items = normalizedItems,
+                            reason = normalizedReason,
+                            refundMethod = normalizedMethod,
                         ),
                 )
                 uiState =
@@ -1869,9 +1916,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     item
                 } else {
                     val normalized = maxOf(0.01, weightKg)
+                    val activeUnitPrice = item.customUnitPrice ?: item.unitPrice
                     item.copy(
                         weightKg = normalized,
-                        totalAmount = normalized * item.unitPrice,
+                        totalAmount = normalized * activeUnitPrice,
                     )
                 }
             }
@@ -1885,9 +1933,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     item
                 } else {
                     val normalized = maxOf(1, count)
+                    val activeUnitPrice = item.customUnitPrice ?: item.unitPrice
                     item.copy(
                         count = normalized,
-                        totalAmount = normalized * item.unitPrice,
+                        totalAmount = normalized * activeUnitPrice,
+                    )
+                }
+            }
+        uiState = uiState.copy(weighDraftItems = next)
+    }
+
+    fun updateWeighDraftUnitPrice(
+        localId: String,
+        unitPrice: Double?,
+    ) {
+        val next =
+            uiState.weighDraftItems.map { item ->
+                if (item.localId != localId) {
+                    item
+                } else {
+                    val normalized = unitPrice?.let { if (it > 0.0) it else null }
+                    val activeUnitPrice = normalized ?: item.unitPrice
+                    val total =
+                        if (item.type == "coconut") {
+                            (item.count ?: 1) * activeUnitPrice
+                        } else {
+                            (item.weightKg ?: 1.0) * activeUnitPrice
+                        }
+                    item.copy(
+                        customUnitPrice = normalized,
+                        totalAmount = total,
                     )
                 }
             }
@@ -1932,6 +2007,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     type = it.type,
                                     weightKg = if (it.type == "coconut") null else (it.weightKg ?: 1.0),
                                     count = if (it.type == "coconut") (it.count ?: 1) else null,
+                                    unitPrice = it.customUnitPrice,
                                 )
                             },
                     ),
@@ -2165,6 +2241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val products = api.getPosProducts().data
+                bootstrapRepository.updatePosSeed(products)
                 var inventoryCategories = api.getPosCategories().data
                 val inventoryVariants =
                     api.getInventory(
@@ -2350,7 +2427,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             uiState = uiState.copy(isRefreshing = true, errorMessage = null)
             try {
-                uiState = uiState.copy(products = api.getPosProducts().data, isRefreshing = false)
+                val products = api.getPosProducts().data
+                bootstrapRepository.updatePosSeed(products)
+                uiState = uiState.copy(products = products, isRefreshing = false)
             } catch (e: Exception) {
                 uiState = uiState.copy(isRefreshing = false, errorMessage = networkErrorMessage(e))
             }
@@ -2466,8 +2545,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uiState = uiState.copy(isRefreshing = true, errorMessage = null)
             try {
                 val categories = api.getPosCategories().data
+                val products = api.getProducts(perPage = 100).data.data
                 uiState =
                     uiState.copy(
+                        productMenuItems = products,
                         inventoryCategories = categories,
                         isRefreshing = false,
                     )

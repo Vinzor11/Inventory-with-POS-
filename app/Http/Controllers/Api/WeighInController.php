@@ -138,6 +138,7 @@ class WeighInController extends Controller
             'weigh_ins.*.type' => ['required', Rule::in($allowedTypes)],
             'weigh_ins.*.weight_kg' => 'nullable|numeric|min:0.01',
             'weigh_ins.*.count' => 'nullable|integer|min:1',
+            'weigh_ins.*.unit_price' => 'nullable|numeric|min:0.01',
         ]);
 
         $processedBy = $this->resolveUserByPin($request->pin);
@@ -160,7 +161,9 @@ class WeighInController extends Controller
                 ]);
 
                 foreach ($request->weigh_ins as $weighInData) {
-                    $price = WeighInPrice::getPriceForType($weighInData['type']);
+                    $price = array_key_exists('unit_price', $weighInData) && $weighInData['unit_price'] !== null
+                        ? (float) $weighInData['unit_price']
+                        : WeighInPrice::getPriceForType($weighInData['type']);
                     if (!$price) {
                         throw new \Exception('Price not set for ' . $weighInData['type']);
                     }

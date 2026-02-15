@@ -121,6 +121,7 @@ class PosController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_variant_id' => 'required|exists:product_variants,id',
             'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.unit_price' => 'nullable|numeric|min:0.01',
             'payment_amount' => 'nullable|numeric|min:0',
             'payment_method' => 'nullable|string|in:cash,gcash,cheque,credit',
             'is_for_delivery' => 'nullable|boolean',
@@ -199,15 +200,24 @@ class PosController extends Controller
 
                     $baseQty = $requestedQuantity;
                     $batchQty = 0.0;
-                    if ($hasPendingBatch && $pendingUnitPrice !== null) {
-                        $baseQty = min($requestedQuantity, $oldQtyRemaining);
-                        $batchQty = max(0, $requestedQuantity - $baseQty);
-                        $pricingState['old_qty_remaining'] = max(0, $oldQtyRemaining - $baseQty);
-                    }
+                    $manualUnitPrice = array_key_exists('unit_price', $itemData) && $itemData['unit_price'] !== null
+                        ? (float) $itemData['unit_price']
+                        : null;
 
-                    $lineTotal = ($baseQty * $baseUnitPrice) + ($batchQty * ($pendingUnitPrice ?? $baseUnitPrice));
-                    $lineTotal = round($lineTotal, 2);
-                    $unitPrice = $requestedQuantity > 0 ? round($lineTotal / $requestedQuantity, 2) : $baseUnitPrice;
+                    if ($manualUnitPrice !== null) {
+                        $lineTotal = round($manualUnitPrice * $requestedQuantity, 2);
+                        $unitPrice = $manualUnitPrice;
+                    } else {
+                        if ($hasPendingBatch && $pendingUnitPrice !== null) {
+                            $baseQty = min($requestedQuantity, $oldQtyRemaining);
+                            $batchQty = max(0, $requestedQuantity - $baseQty);
+                            $pricingState['old_qty_remaining'] = max(0, $oldQtyRemaining - $baseQty);
+                        }
+
+                        $lineTotal = ($baseQty * $baseUnitPrice) + ($batchQty * ($pendingUnitPrice ?? $baseUnitPrice));
+                        $lineTotal = round($lineTotal, 2);
+                        $unitPrice = $requestedQuantity > 0 ? round($lineTotal / $requestedQuantity, 2) : $baseUnitPrice;
+                    }
                     $subtotal += $lineTotal;
 
                     $saleItems[] = [

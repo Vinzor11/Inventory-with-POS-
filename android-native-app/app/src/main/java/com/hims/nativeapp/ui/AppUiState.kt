@@ -21,6 +21,7 @@ data class PosCartItem(
     val variantName: String,
     val image: String? = null,
     val unitPrice: Double = 0.0,
+    val customUnitPrice: Double? = null,
     val quantity: Double = 1.0,
 )
 
@@ -54,6 +55,7 @@ data class WeighDraftItem(
     val weightKg: Double? = null,
     val count: Int? = null,
     val unitPrice: Double = 0.0,
+    val customUnitPrice: Double? = null,
     val totalAmount: Double = 0.0,
 )
 

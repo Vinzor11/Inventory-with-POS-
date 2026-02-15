@@ -257,6 +257,7 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         onAddToCart = viewModel::addPosProductToCart,
                         onUpdateCartQuantity = viewModel::updatePosCartQuantity,
                         onSetCartQuantity = viewModel::setPosCartQuantity,
+                        onSetCartUnitPrice = viewModel::setPosCartUnitPrice,
                         onRemoveCartItem = viewModel::removePosCartItem,
                         onClearCart = viewModel::clearPosCart,
                         onFullscreenModeChange = { isFullscreenMode = it },
@@ -358,6 +359,7 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         onAddTypeToDraft = viewModel::addWeighTypeToDraft,
                         onUpdateDraftWeight = viewModel::updateWeighDraftWeight,
                         onUpdateDraftCount = viewModel::updateWeighDraftCount,
+                        onUpdateDraftUnitPrice = viewModel::updateWeighDraftUnitPrice,
                         onRemoveDraftItem = viewModel::removeWeighDraftItem,
                         onClearDraft = viewModel::clearWeighDraft,
                         onProcessDraft = { pin, onSuccess ->

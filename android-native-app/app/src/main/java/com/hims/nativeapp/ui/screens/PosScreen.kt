@@ -93,6 +93,7 @@ fun PosScreen(
     onAddToCart: (Product, ProductVariant) -> Unit,
     onUpdateCartQuantity: (variantId: Int, delta: Double) -> Unit,
     onSetCartQuantity: (variantId: Int, quantity: Double) -> Unit,
+    onSetCartUnitPrice: (variantId: Int, unitPrice: Double?) -> Unit,
     onRemoveCartItem: (variantId: Int) -> Unit,
     onClearCart: () -> Unit,
     onFullscreenModeChange: (Boolean) -> Unit,
@@ -246,6 +247,7 @@ fun PosScreen(
             onDismiss = { showCart = false },
             onUpdateCartQuantity = onUpdateCartQuantity,
             onSetCartQuantity = onSetCartQuantity,
+            onSetCartUnitPrice = onSetCartUnitPrice,
             onRemoveCartItem = onRemoveCartItem,
             onClearCart = onClearCart,
             onCheckout = onCheckout,
@@ -422,6 +424,20 @@ private fun calculateCartLinePricing(
     item: PosCartItem,
     variant: ProductVariant?,
 ): CartLinePricing {
+    val customUnitPrice = item.customUnitPrice
+    if (customUnitPrice != null && customUnitPrice > 0.0) {
+        val quantity = item.quantity.coerceAtLeast(0.0)
+        val lineTotal = customUnitPrice * quantity
+        return CartLinePricing(
+            unitDisplayPrice = customUnitPrice,
+            lineTotal = lineTotal,
+            baseQty = quantity,
+            batchQty = 0.0,
+            baseUnitPrice = customUnitPrice,
+            batchUnitPrice = null,
+        )
+    }
+
     val baseUnitPrice = variant?.unitPrice ?: item.unitPrice
     val pendingUnitPrice = variant?.pendingUnitPrice
     val pendingBatchQty = variant?.pendingPriceQuantity
@@ -471,6 +487,7 @@ private fun PosCartSheet(
     onDismiss: () -> Unit,
     onUpdateCartQuantity: (variantId: Int, delta: Double) -> Unit,
     onSetCartQuantity: (variantId: Int, quantity: Double) -> Unit,
+    onSetCartUnitPrice: (variantId: Int, unitPrice: Double?) -> Unit,
     onRemoveCartItem: (variantId: Int) -> Unit,
     onClearCart: () -> Unit,
     onCheckout: (
@@ -593,8 +610,12 @@ private fun PosCartSheet(
             } else {
                 cartItems.forEachIndexed { index, item ->
                     var qtyInput by remember(item.variantId) { mutableStateOf(formatCompactNumber(item.quantity)) }
+                    var unitPriceInput by remember(item.variantId) { mutableStateOf(item.customUnitPrice?.let(::formatCompactNumber).orEmpty()) }
                     LaunchedEffect(item.quantity) {
                         qtyInput = formatCompactNumber(item.quantity)
+                    }
+                    LaunchedEffect(item.customUnitPrice) {
+                        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
                     }
                     val imageUrl = fullImageUrl(BuildConfig.API_BASE_URL, item.image)
                     val linePricing =
@@ -704,6 +725,38 @@ private fun PosCartSheet(
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             ) {
                                 Text(text = "Remove", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "Custom Price",
+                                color = Color(0xFF6B7280),
+                                fontSize = 12.sp,
+                                modifier = Modifier.width(88.dp),
+                            )
+                            CompactNumberField(
+                                value = unitPriceInput,
+                                onValueChange = { input ->
+                                    unitPriceInput = input
+                                    val parsed = input.toDoubleOrNull()
+                                    onSetCartUnitPrice(item.variantId, parsed)
+                                },
+                                modifier = Modifier.width(110.dp),
+                                allowDecimal = true,
+                                enabled = !isActionLoading,
+                            )
+                            TextButton(
+                                enabled = !isActionLoading,
+                                onClick = {
+                                    unitPriceInput = ""
+                                    onSetCartUnitPrice(item.variantId, null)
+                                },
+                            ) {
+                                Text("Reset", color = PrimaryBlue, fontSize = 12.sp)
                             }
                         }
                         Row(

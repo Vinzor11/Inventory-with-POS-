@@ -98,6 +98,7 @@ fun WeighScreen(
     onAddTypeToDraft: (String) -> Unit,
     onUpdateDraftWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateDraftCount: (localId: String, count: Int) -> Unit,
+    onUpdateDraftUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
     onRemoveDraftItem: (localId: String) -> Unit,
     onClearDraft: () -> Unit,
     onProcessDraft: (pin: String, onSuccess: () -> Unit) -> Unit,
@@ -286,6 +287,7 @@ fun WeighScreen(
             onDismiss = { showCart = false },
             onUpdateWeight = onUpdateDraftWeight,
             onUpdateCount = onUpdateDraftCount,
+            onUpdateUnitPrice = onUpdateDraftUnitPrice,
             onRemoveItem = onRemoveDraftItem,
             onClear = onClearDraft,
             onProcess = onProcessDraft,
@@ -597,6 +599,7 @@ private fun WeighDraftCartSheet(
     onDismiss: () -> Unit,
     onUpdateWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateCount: (localId: String, count: Int) -> Unit,
+    onUpdateUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
     onRemoveItem: (localId: String) -> Unit,
     onClear: () -> Unit,
     onProcess: (pin: String, onSuccess: () -> Unit) -> Unit,
@@ -671,6 +674,7 @@ private fun WeighDraftCartSheet(
                         isActionLoading = isActionLoading,
                         onUpdateWeight = onUpdateWeight,
                         onUpdateCount = onUpdateCount,
+                        onUpdateUnitPrice = onUpdateUnitPrice,
                         onRemove = onRemoveItem,
                     )
                     if (index < items.lastIndex) {
@@ -879,6 +883,7 @@ private fun WeighDraftRow(
     isActionLoading: Boolean,
     onUpdateWeight: (localId: String, weightKg: Double) -> Unit,
     onUpdateCount: (localId: String, count: Int) -> Unit,
+    onUpdateUnitPrice: (localId: String, unitPrice: Double?) -> Unit,
     onRemove: (localId: String) -> Unit,
 ) {
     var countInput by remember(item.localId) { mutableStateOf((item.count ?: 1).toString()) }
@@ -888,6 +893,10 @@ private fun WeighDraftRow(
     var weightInput by remember(item.localId) { mutableStateOf(formatCompactNumber(item.weightKg ?: 1.0)) }
     LaunchedEffect(item.weightKg) {
         weightInput = formatCompactNumber(item.weightKg ?: 1.0)
+    }
+    var unitPriceInput by remember(item.localId) { mutableStateOf(item.customUnitPrice?.let(::formatCompactNumber).orEmpty()) }
+    LaunchedEffect(item.customUnitPrice) {
+        unitPriceInput = item.customUnitPrice?.let(::formatCompactNumber).orEmpty()
     }
 
     val title = when (item.type) {
@@ -963,7 +972,7 @@ private fun WeighDraftRow(
                     }
                 }
                 Text(
-                    text = "@ ${formatPeso(item.unitPrice)} /pc",
+                    text = "@ ${formatPeso(item.customUnitPrice ?: item.unitPrice)} /pc",
                     color = Color(0xFF64748B),
                     fontSize = 12.sp,
                 )
@@ -996,10 +1005,42 @@ private fun WeighDraftRow(
                     }
                 }
                 Text(
-                    text = "@ ${formatPeso(item.unitPrice)} /kg",
+                    text = "@ ${formatPeso(item.customUnitPrice ?: item.unitPrice)} /kg",
                     color = Color(0xFF64748B),
                     fontSize = 12.sp,
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "Custom Price",
+                    color = Color(0xFF6B7280),
+                    fontSize = 12.sp,
+                    modifier = Modifier.width(96.dp),
+                )
+                CompactNumberField(
+                    value = unitPriceInput,
+                    onValueChange = {
+                        unitPriceInput = it
+                        val parsed = it.toDoubleOrNull()
+                        onUpdateUnitPrice(item.localId, parsed)
+                    },
+                    modifier = Modifier.width(110.dp),
+                    allowDecimal = true,
+                    enabled = !isActionLoading,
+                )
+                TextButton(
+                    enabled = !isActionLoading,
+                    onClick = {
+                        unitPriceInput = ""
+                        onUpdateUnitPrice(item.localId, null)
+                    },
+                ) {
+                    Text("Reset", color = PrimaryBlue, fontSize = 12.sp)
+                }
             }
         }
     }

@@ -390,6 +390,8 @@ data class PosCheckoutItemRequest(
     @SerializedName("product_variant_id")
     val productVariantId: Int,
     val quantity: Double,
+    @SerializedName("unit_price")
+    val unitPrice: Double? = null,
 )
 
 data class PosCheckoutRequest(
@@ -759,6 +761,8 @@ data class WeighBatchItemRequest(
     @SerializedName("weight_kg")
     val weightKg: Double? = null,
     val count: Int? = null,
+    @SerializedName("unit_price")
+    val unitPrice: Double? = null,
 )
 
 data class WeighBatchStoreRequest(

@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1713,11 +1716,19 @@ private fun RefundSheet(
     onDismiss: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
         Column(
             modifier =
                 Modifier
+                    .fillMaxHeight(0.95f)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1794,6 +1805,7 @@ private fun RefundSheet(
                 MethodChip(label = "Card", selected = method == "card") { onMethodChange("card") }
                 MethodChip(label = "GCash", selected = method == "gcash") { onMethodChange("gcash") }
                 MethodChip(label = "Maya", selected = method == "maya") { onMethodChange("maya") }
+                MethodChip(label = "Store Credit", selected = method == "store_credit") { onMethodChange("store_credit") }
             }
 
             error?.let {

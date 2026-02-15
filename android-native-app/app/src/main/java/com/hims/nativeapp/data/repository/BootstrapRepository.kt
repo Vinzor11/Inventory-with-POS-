@@ -138,6 +138,18 @@ class BootstrapRepository(
         }
     }
 
+    suspend fun updatePosSeed(posSeed: List<Product>) {
+        db.withTransaction {
+            val existing = db.bootstrapStateDao().get() ?: return@withTransaction
+            db.bootstrapStateDao().upsert(
+                existing.copy(
+                    posSeedJson = gson.toJson(posSeed),
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
     private fun BootstrapResponse.toEntity(nowEpochMs: Long, gson: Gson): BootstrapStateEntity {
         return BootstrapStateEntity(
             id = 1,
