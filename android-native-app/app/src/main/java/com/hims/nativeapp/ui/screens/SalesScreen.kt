@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -1779,6 +1780,7 @@ private fun RefundSheet(
     onSubmit: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.96f
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1787,23 +1789,23 @@ private fun RefundSheet(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.92f)
+                    .heightIn(min = 360.dp, max = maxSheetHeight)
                     .verticalScroll(rememberScrollState())
                     .imePadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = "Refund Items",
                 color = TextCharcoal,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 17.sp,
             )
             Text(
                 text = data.sale.saleNumber,
                 color = Color(0xFF374151),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
             )
             if (data.refundableItems.isEmpty()) {
                 Text(
@@ -1817,17 +1819,25 @@ private fun RefundSheet(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     data.refundableItems.forEach { refundable ->
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFF9FAFB), RoundedCornerShape(10.dp))
+                                    .border(1.dp, BorderSoft, RoundedCornerShape(10.dp))
+                                    .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             Text(
                                 text = refundable.saleItem.productVariant.product?.name ?: "-",
                                 color = TextCharcoal,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                             )
                             Text(
                                 text = refundable.saleItem.productVariant.description ?: "-",
                                 color = Color(0xFF374151),
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                             )
                             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -1839,9 +1849,9 @@ private fun RefundSheet(
                                 OutlinedTextField(
                                     value = qtyInputs[refundable.saleItem.id].orEmpty(),
                                     onValueChange = { onQtyChange(refundable.saleItem.id, it) },
-                                    modifier = Modifier.width(88.dp),
+                                    modifier = Modifier.width(74.dp),
                                     singleLine = true,
-                                    placeholder = { Text("Qty") },
+                                    placeholder = { Text("0", fontSize = 13.sp) },
                                     keyboardOptions =
                                         KeyboardOptions(
                                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
@@ -1858,13 +1868,14 @@ private fun RefundSheet(
                 value = reason,
                 onValueChange = onReasonChange,
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-                label = { Text("Reason") },
+                minLines = 1,
+                maxLines = 2,
+                placeholder = { Text("Reason", fontSize = 13.sp) },
             )
             Text(
                 text = "Refund Method",
                 color = TextCharcoal,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Row(

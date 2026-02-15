@@ -125,22 +125,38 @@ class PaymentsReportQueryService
 
     /**
      * Get outstanding balances (for dashboard)
-     * Uses single query with LEFT JOIN for maximum performance
+     * Outstanding is computed from:
+     *   adjusted_due = max(sales.total - total_refunded, 0)
+     *   outstanding  = max(adjusted_due - total_positive_payments, 0)
+     *
+     * Notes:
+     * - `sales.total` already reflects item cancellations (adjustSale()).
+     * - Subtracting refunds prevents refunded amounts from appearing as outstanding.
+     * - Positive payments are used (cash-in only), so refund outflows do not
+     *   incorrectly increase receivables.
      */
     public function getOutstandingBalances(array $filters = []): float
     {
         $paymentTotals = DB::table('payments')
             ->select('sale_id')
-            ->selectRaw('COALESCE(SUM(amount), 0) as paid_amount')
+            ->selectRaw('COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as paid_amount')
+            ->groupBy('sale_id');
+
+        $refundTotals = DB::table('refunds')
+            ->select('sale_id')
+            ->selectRaw('COALESCE(SUM(refund_amount), 0) as refunded_amount')
             ->groupBy('sale_id');
 
         $query = DB::table('sales')
+            ->leftJoinSub($refundTotals, 'refund_totals', function ($join): void {
+                $join->on('refund_totals.sale_id', '=', 'sales.id');
+            })
             ->leftJoinSub($paymentTotals, 'payment_totals', function ($join): void {
                 $join->on('payment_totals.sale_id', '=', 'sales.id');
             })
             ->whereNotIn('sales.status', ['VOIDED', 'REFUNDED'])
             ->selectRaw(
-                'COALESCE(SUM(CASE WHEN (sales.total - COALESCE(payment_totals.paid_amount, 0)) > 0 THEN (sales.total - COALESCE(payment_totals.paid_amount, 0)) ELSE 0 END), 0) as outstanding'
+                'COALESCE(SUM(CASE WHEN ((CASE WHEN (sales.total - COALESCE(refund_totals.refunded_amount, 0)) > 0 THEN (sales.total - COALESCE(refund_totals.refunded_amount, 0)) ELSE 0 END) - COALESCE(payment_totals.paid_amount, 0)) > 0 THEN ((CASE WHEN (sales.total - COALESCE(refund_totals.refunded_amount, 0)) > 0 THEN (sales.total - COALESCE(refund_totals.refunded_amount, 0)) ELSE 0 END) - COALESCE(payment_totals.paid_amount, 0)) ELSE 0 END), 0) as outstanding'
             );
 
         if (isset($filters['date_from'])) {

@@ -1769,10 +1769,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSuccess: (String) -> Unit,
     ) {
         viewModelScope.launch {
-            uiState = uiState.copy(isActionLoading = true, errorMessage = null)
             try {
                 val response = api.getSaleReceipt(saleId = saleId)
-                uiState = uiState.copy(isActionLoading = false)
                 val text = response.data.receiptText.orEmpty()
                 if (text.isBlank()) {
                     uiState = uiState.copy(errorMessage = "Receipt text is empty.")
@@ -1782,7 +1780,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 uiState =
                     uiState.copy(
-                        isActionLoading = false,
                         errorMessage = networkErrorMessage(e),
                     )
             }
@@ -1821,10 +1818,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSuccess: (String) -> Unit,
     ) {
         viewModelScope.launch {
-            uiState = uiState.copy(isActionLoading = true, errorMessage = null)
             try {
                 val response = api.getDeliveryReceipt(deliveryId = deliveryId)
-                uiState = uiState.copy(isActionLoading = false)
                 val text = response.data.receiptText.orEmpty()
                 if (text.isBlank()) {
                     uiState = uiState.copy(errorMessage = "Receipt text is empty.")
@@ -1834,7 +1829,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 uiState =
                     uiState.copy(
-                        isActionLoading = false,
                         errorMessage = networkErrorMessage(e),
                     )
             }
