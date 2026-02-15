@@ -140,7 +140,7 @@ class PaymentsReportQueryService
             })
             ->whereNotIn('sales.status', ['VOIDED', 'REFUNDED'])
             ->selectRaw(
-                'COALESCE(SUM(GREATEST(sales.total - COALESCE(payment_totals.paid_amount, 0), 0)), 0) as outstanding'
+                'COALESCE(SUM(CASE WHEN (sales.total - COALESCE(payment_totals.paid_amount, 0)) > 0 THEN (sales.total - COALESCE(payment_totals.paid_amount, 0)) ELSE 0 END), 0) as outstanding'
             );
 
         if (isset($filters['date_from'])) {

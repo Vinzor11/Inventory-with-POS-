@@ -68,7 +68,8 @@ class DashboardQueryService
             $query->whereRaw($this->saleDateExpression() . ' <= ?', [$filters['date_to']]);
         }
 
-        $remainingQtyExpr = "GREATEST(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0) - COALESCE(refund_totals.refunded_qty, 0), 0)";
+        $rawRemainingQtyExpr = "(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0) - COALESCE(refund_totals.refunded_qty, 0))";
+        $remainingQtyExpr = "(CASE WHEN {$rawRemainingQtyExpr} > 0 THEN {$rawRemainingQtyExpr} ELSE 0 END)";
         $qtyRatioExpr = "CASE WHEN sale_items.quantity > 0 THEN ($remainingQtyExpr / sale_items.quantity) ELSE 0 END";
         $adjustedRevenueExpr = "(sale_items.line_total * ($qtyRatioExpr))";
         $fallbackUnitCostExpr = "COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)";
