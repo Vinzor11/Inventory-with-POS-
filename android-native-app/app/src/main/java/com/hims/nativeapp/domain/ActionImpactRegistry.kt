@@ -5,7 +5,10 @@ import com.hims.nativeapp.core.DataTopic
 enum class DomainAction {
     SALE_COMPLETED_WALK_IN,
     SALE_CREATED_DELIVERY,
+    SALE_REFUNDED,
+    SALE_VOIDED,
     DELIVERY_MARKED_DELIVERED,
+    WEIGH_IN_RECORDED,
     STOCK_ADJUSTMENT,
     PRODUCT_UPDATED,
     CUSTOMER_CREATED,
@@ -22,12 +25,25 @@ object ActionImpactRegistry {
             DataTopic.TRANSACTIONS,
             DataTopic.DELIVERIES,
         ),
+        DomainAction.SALE_REFUNDED to setOf(
+            DataTopic.STOCK,
+            DataTopic.INVENTORY,
+            DataTopic.TRANSACTIONS,
+            DataTopic.DELIVERIES,
+        ),
+        DomainAction.SALE_VOIDED to setOf(
+            DataTopic.STOCK,
+            DataTopic.INVENTORY,
+            DataTopic.TRANSACTIONS,
+            DataTopic.DELIVERIES,
+        ),
         DomainAction.DELIVERY_MARKED_DELIVERED to setOf(
             DataTopic.STOCK,
             DataTopic.INVENTORY,
             DataTopic.TRANSACTIONS,
             DataTopic.DELIVERIES,
         ),
+        DomainAction.WEIGH_IN_RECORDED to emptySet(),
         DomainAction.STOCK_ADJUSTMENT to setOf(
             DataTopic.STOCK,
             DataTopic.INVENTORY,

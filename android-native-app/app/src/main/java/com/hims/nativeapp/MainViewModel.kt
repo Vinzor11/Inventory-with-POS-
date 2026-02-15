@@ -92,6 +92,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun triggerPostActionRefresh(
+        action: DomainAction,
+        entityId: Int? = null,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                EmitImpact.emit(
+                    action = action,
+                    reason = "local",
+                    entityId = entityId,
+                )
+            }
+        }
+
+        when (action) {
+            DomainAction.SALE_COMPLETED_WALK_IN -> {
+                refreshPosSilently()
+                refreshInventorySilently()
+                refreshSalesSilently()
+                refreshDashboardSilently()
+            }
+            DomainAction.SALE_CREATED_DELIVERY -> {
+                refreshSalesSilently()
+                refreshDeliveriesSilently()
+                refreshDashboardSilently()
+            }
+            DomainAction.SALE_REFUNDED,
+            DomainAction.SALE_VOIDED,
+            DomainAction.DELIVERY_MARKED_DELIVERED -> {
+                refreshPosSilently()
+                refreshInventorySilently()
+                refreshSalesSilently()
+                refreshDeliveriesSilently()
+                refreshDashboardSilently()
+            }
+            DomainAction.WEIGH_IN_RECORDED -> {
+                refreshWeighInsSilently()
+                refreshDashboardSilently()
+            }
+            DomainAction.STOCK_ADJUSTMENT -> {
+                refreshPosSilently()
+                refreshInventorySilently()
+                refreshDashboardSilently()
+            }
+            DomainAction.PRODUCT_UPDATED -> {
+                refreshProductsMenuSilently()
+                refreshPosSilently()
+                refreshInventorySilently()
+            }
+            DomainAction.CUSTOMER_CREATED -> {
+                refreshSalesSilently()
+            }
+        }
+    }
+
     private fun attachStartupCoordinator() {
         if (startupCollectorAttached) {
             return
@@ -1393,13 +1448,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           deliveryCartItems = emptyList(),
                           successMessage = response.message ?: "Delivery processed successfully.",
                       )
-                  EmitImpact.emit(
+                  triggerPostActionRefresh(
                       action = DomainAction.DELIVERY_MARKED_DELIVERED,
-                      reason = "local",
                       entityId = response.data.id,
                   )
-                  refreshSales()
-                  refreshDeliveries()
                   onSuccess(response.data.id)
             } catch (e: Exception) {
                 uiState =
@@ -1496,12 +1548,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                           posCartItems = emptyList(),
                           successMessage = response.message ?: "Sale completed successfully.",
                       )
-                  EmitImpact.emit(
+                  triggerPostActionRefresh(
                       action = if (isForDelivery) DomainAction.SALE_CREATED_DELIVERY else DomainAction.SALE_COMPLETED_WALK_IN,
-                      reason = "local",
                       entityId = response.data.sale.id,
                   )
-                  refreshAll()
                   onSuccess(response.data.sale.id)
             } catch (e: Exception) {
                 if (isOfflineQueueableError(e)) {
@@ -1646,8 +1696,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Sale voided successfully.",
                     )
-                refreshSales()
-                refreshDeliveries()
+                triggerPostActionRefresh(
+                    action = DomainAction.SALE_VOIDED,
+                    entityId = saleId,
+                )
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1706,6 +1758,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isDeliverySale =
             uiState.sales.firstOrNull { it.id == saleId }?.isForDelivery
                 ?: uiState.deliveryQueue.any { it.sale?.id == saleId }
+        if (!isDeliverySale) {
+            uiState = uiState.copy(errorMessage = "Item cancellation is only available for delivery sales.")
+            return
+        }
         if (isDeliverySale && !isCurrentUserAdmin()) {
             uiState = uiState.copy(errorMessage = "Only administrators can cancel delivery sale items.")
             return
@@ -1729,8 +1785,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Item canceled successfully.",
                     )
-                refreshSales()
-                refreshDeliveries()
+                triggerPostActionRefresh(
+                    action = DomainAction.SALE_REFUNDED,
+                    entityId = saleId,
+                )
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1785,8 +1843,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Delivery updated successfully.",
                     )
-                refreshSales()
-                refreshDeliveries()
+                triggerPostActionRefresh(
+                    action = DomainAction.DELIVERY_MARKED_DELIVERED,
+                    entityId = saleId,
+                )
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1870,8 +1930,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isActionLoading = false,
                         successMessage = response.message ?: "Refund processed successfully.",
                     )
-                refreshSales()
-                refreshDeliveries()
+                triggerPostActionRefresh(
+                    action = DomainAction.SALE_REFUNDED,
+                    entityId = saleId,
+                )
                 onSuccess()
             } catch (e: Exception) {
                 uiState =
@@ -1884,16 +1946,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addWeighTypeToDraft(type: String) {
-        val unitPrice = uiState.weighPrices[type]
-        if (unitPrice == null || unitPrice <= 0.0) {
+        val baseUnitPrice = uiState.weighPrices[type]
+        if (baseUnitPrice == null || baseUnitPrice <= 0.0) {
             uiState = uiState.copy(errorMessage = "Price not set for ${prettyType(type)}.")
             return
         }
 
+        // If current cart already has a custom price for the same type, inherit it for newly added rows.
+        val inheritedCustomPrice =
+            uiState.weighDraftItems
+                .lastOrNull { it.type.trim().lowercase() == type.trim().lowercase() && it.customUnitPrice != null }
+                ?.customUnitPrice
+        val activeUnitPrice = inheritedCustomPrice ?: baseUnitPrice
+
         val isCoconut = type == "coconut"
         val weight = if (isCoconut) null else 1.0
         val count = if (isCoconut) 1 else null
-        val totalAmount = if (isCoconut) (count ?: 0) * unitPrice else (weight ?: 0.0) * unitPrice
+        val totalAmount = if (isCoconut) (count ?: 0) * activeUnitPrice else (weight ?: 0.0) * activeUnitPrice
 
         val next =
             uiState.weighDraftItems +
@@ -1902,7 +1971,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     type = type,
                     weightKg = weight,
                     count = count,
-                    unitPrice = unitPrice,
+                    unitPrice = baseUnitPrice,
+                    customUnitPrice = inheritedCustomPrice,
                     totalAmount = totalAmount,
                 )
 
@@ -1969,6 +2039,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         uiState = uiState.copy(weighDraftItems = next)
     }
 
+    fun applyWeighDraftUnitPriceByType(
+        type: String,
+        unitPrice: Double?,
+    ) {
+        val targetType = type.trim().lowercase()
+        val normalized = unitPrice?.let { if (it > 0.0) it else null }
+        val next =
+            uiState.weighDraftItems.map { item ->
+                if (item.type.trim().lowercase() != targetType) {
+                    item
+                } else {
+                    val activeUnitPrice = normalized ?: item.unitPrice
+                    val total =
+                        if (item.type == "coconut") {
+                            (item.count ?: 1) * activeUnitPrice
+                        } else {
+                            (item.weightKg ?: 1.0) * activeUnitPrice
+                        }
+                    item.copy(
+                        customUnitPrice = normalized,
+                        totalAmount = total,
+                    )
+                }
+            }
+        uiState = uiState.copy(weighDraftItems = next)
+    }
+
     fun removeWeighDraftItem(localId: String) {
         uiState =
             uiState.copy(
@@ -2018,7 +2115,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         weighDraftItems = emptyList(),
                         successMessage = response.message ?: "Weigh-ins saved successfully.",
                     )
-                refreshWeighIns()
+                triggerPostActionRefresh(action = DomainAction.WEIGH_IN_RECORDED)
                 onSuccess(response.data)
             } catch (e: Exception) {
                 uiState =
@@ -2225,6 +2322,117 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     uiState.copy(
                         isActionLoading = false,
                         errorMessage = networkErrorMessage(e),
+                    )
+            }
+        }
+    }
+
+    private fun refreshPosSilently() {
+        viewModelScope.launch {
+            runCatching {
+                val products = api.getPosProducts().data
+                bootstrapRepository.updatePosSeed(products)
+                uiState = uiState.copy(products = products)
+            }
+        }
+    }
+
+    private fun refreshSalesSilently() {
+        viewModelScope.launch {
+            runCatching {
+                val updatedSales =
+                    api.getSales(
+                        status = asQueryValue(uiState.salesStatusFilter),
+                        paymentStatus = asQueryValue(uiState.salesPaymentStatusFilter),
+                        deliveryStatus = asQueryValue(uiState.salesDeliveryStatusFilter),
+                        dateFrom = asDateQuery(uiState.salesDateFrom),
+                        dateTo = asDateQuery(uiState.salesDateTo),
+                    ).data.data
+                uiState = uiState.copy(sales = updatedSales)
+            }
+        }
+    }
+
+    private fun refreshDeliveriesSilently() {
+        viewModelScope.launch {
+            runCatching {
+                val queue =
+                    fetchDeliveryQueueRecords(
+                        statusFilter = uiState.deliveryStatusFilter,
+                        dateFrom = asDateQuery(uiState.deliveryDateFrom),
+                        dateTo = asDateQuery(uiState.deliveryDateTo),
+                    )
+                val history = api.getDeliveries(perPage = 200).data.data
+                uiState = uiState.copy(deliveryQueue = queue, deliveries = history)
+            }
+        }
+    }
+
+    private fun refreshInventorySilently() {
+        viewModelScope.launch {
+            runCatching {
+                val categories = api.getPosCategories().data
+                val variants =
+                    api.getInventory(
+                        categoryId = uiState.inventoryCategoryFilter,
+                        lowStockOnly = if (uiState.inventoryLowStockOnly) true else null,
+                    ).data.data
+                val dashboard = runCatching { api.getInventoryDashboard().data }.getOrNull()
+                val movements = runCatching { api.getInventoryMovements(perPage = 200).data.data }.getOrNull()
+                val cookedSummary = runCatching { api.getCookedCopraStockSummary().data }.getOrNull()
+                uiState =
+                    uiState.copy(
+                        inventoryCategories = categories,
+                        inventoryVariants = variants,
+                        inventoryDashboard = dashboard ?: uiState.inventoryDashboard,
+                        inventoryMovements = movements ?: uiState.inventoryMovements,
+                        cookedCopraStockSummary = cookedSummary ?: uiState.cookedCopraStockSummary,
+                    )
+            }
+        }
+    }
+
+    private fun refreshProductsMenuSilently() {
+        viewModelScope.launch {
+            runCatching {
+                val categories = api.getPosCategories().data
+                val products = api.getProducts(perPage = 100).data.data
+                uiState = uiState.copy(productMenuItems = products, inventoryCategories = categories)
+            }
+        }
+    }
+
+    private fun refreshDashboardSilently() {
+        if (!isCurrentUserAdmin()) {
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                val dashboard = api.getDashboard().data
+                uiState = uiState.copy(dashboardData = dashboard)
+            }
+        }
+    }
+
+    private fun refreshWeighInsSilently() {
+        viewModelScope.launch {
+            runCatching {
+                val landing = api.getWeighLanding().data
+                val weighIns =
+                    api.getWeighIns(
+                        perPage = 200,
+                        type = asQueryValue(uiState.weighTypeFilter),
+                        status = asQueryValue(uiState.weighStatusFilter),
+                        dateFrom = asDateQuery(uiState.weighDateFrom),
+                        dateTo = asDateQuery(uiState.weighDateTo),
+                    ).data.data
+                val unpaid = api.getUnpaidWeighIns().data
+                uiState =
+                    uiState.copy(
+                        weighIns = weighIns,
+                        weighPrices = landing.prices.mapValues { entry -> entry.value.price },
+                        weighProducts = landing.products,
+                        unpaidWeighTransactions = unpaid,
                     )
             }
         }

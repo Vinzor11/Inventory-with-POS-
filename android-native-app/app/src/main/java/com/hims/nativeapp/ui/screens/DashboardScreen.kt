@@ -174,6 +174,18 @@ fun DashboardScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatPill(
+                        label = "Today's Payments",
+                        value = formatPeso(dashboard.payments.today.totalPayments),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatPill(
+                        label = "Outstanding Balance",
+                        value = formatPeso(dashboard.payments.today.outstandingBalances),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 

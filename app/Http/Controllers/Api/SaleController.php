@@ -431,6 +431,13 @@ class SaleController extends Controller
     {
         $this->authorizeAdmin($request);
 
+        if (!$sale->is_for_delivery) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item cancellation is only available for delivery sales.',
+            ], 422);
+        }
+
         $request->validate([
             'sale_item_id' => 'required|exists:sale_items,id',
             'quantity_to_cancel' => 'nullable|numeric|min:0.01',

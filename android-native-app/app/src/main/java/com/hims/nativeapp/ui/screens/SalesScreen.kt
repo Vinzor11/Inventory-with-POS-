@@ -1751,40 +1751,45 @@ private fun RefundSheet(
                     fontSize = 14.sp,
                 )
             } else {
-                data.refundableItems.forEach { refundable ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = refundable.saleItem.productVariant.product?.name ?: "-",
-                            color = TextCharcoal,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp,
-                        )
-                        Text(
-                            text = refundable.saleItem.productVariant.description ?: "-",
-                            color = Color(0xFF374151),
-                            fontSize = 13.sp,
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    data.refundableItems.forEach { refundable ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Refundable: x${formatQty(refundable.refundableQuantity)}",
-                                color = Color(0xFF6B7280),
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f),
+                                text = refundable.saleItem.productVariant.product?.name ?: "-",
+                                color = TextCharcoal,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
                             )
-                            OutlinedTextField(
-                                value = qtyInputs[refundable.saleItem.id].orEmpty(),
-                                onValueChange = { onQtyChange(refundable.saleItem.id, it) },
-                                modifier = Modifier.width(108.dp),
-                                singleLine = true,
-                                label = { Text("Qty") },
-                                keyboardOptions =
-                                    KeyboardOptions(
-                                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                                    ),
+                            Text(
+                                text = refundable.saleItem.productVariant.description ?: "-",
+                                color = Color(0xFF374151),
+                                fontSize = 13.sp,
                             )
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Refundable: x${formatQty(refundable.refundableQuantity)}",
+                                    color = Color(0xFF6B7280),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                OutlinedTextField(
+                                    value = qtyInputs[refundable.saleItem.id].orEmpty(),
+                                    onValueChange = { onQtyChange(refundable.saleItem.id, it) },
+                                    modifier = Modifier.width(108.dp),
+                                    singleLine = true,
+                                    label = { Text("Qty") },
+                                    keyboardOptions =
+                                        KeyboardOptions(
+                                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                                        ),
+                                )
+                            }
                         }
+                        HorizontalDivider(color = BorderSoft)
                     }
-                    HorizontalDivider(color = BorderSoft)
                 }
             }
 
@@ -1985,7 +1990,7 @@ private fun canCancelSaleItem(
     if (saleStatus == "VOIDED" || saleStatus == "REFUNDED" || saleStatus == "PARTIALLY_REFUNDED") {
         return false
     }
-    if (sale.isForDelivery) {
+    if (!sale.isForDelivery) {
         return false
     }
     if (item.itemStatus.orEmpty().uppercase() == "CANCELED") {

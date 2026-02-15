@@ -76,8 +76,10 @@ class PaymentsReportQueryService
     public function getTotalPaymentsReceived(array $filters = []): float
     {
         return (float) $this->baseQuery($filters)
+            ->join('sales', 'payments.sale_id', '=', 'sales.id')
+            ->where('sales.status', '!=', 'VOIDED')
             ->where('amount', '>', 0)
-            ->sum('amount');
+            ->sum('payments.amount');
     }
 
     /**
@@ -101,7 +103,8 @@ class PaymentsReportQueryService
                 SUM(CASE WHEN payment_status = 'FULLY_PAID' THEN 1 ELSE 0 END) as fully_paid,
                 SUM(CASE WHEN payment_status = 'PARTIALLY_PAID' THEN 1 ELSE 0 END) as partially_paid,
                 SUM(CASE WHEN payment_status = 'UNPAID' THEN 1 ELSE 0 END) as unpaid
-            ");
+            ")
+            ->whereNotIn('status', ['VOIDED', 'REFUNDED']);
 
         if (isset($filters['date_from'])) {
             $query->whereDate('created_at', '>=', $filters['date_from']);
@@ -126,9 +129,19 @@ class PaymentsReportQueryService
      */
     public function getOutstandingBalances(array $filters = []): float
     {
+        $paymentTotals = DB::table('payments')
+            ->select('sale_id')
+            ->selectRaw('COALESCE(SUM(amount), 0) as paid_amount')
+            ->groupBy('sale_id');
+
         $query = DB::table('sales')
-            ->selectRaw('COALESCE(SUM(sales.total), 0) - COALESCE(SUM(payments.amount), 0) as outstanding')
-            ->leftJoin('payments', 'payments.sale_id', '=', 'sales.id');
+            ->leftJoinSub($paymentTotals, 'payment_totals', function ($join): void {
+                $join->on('payment_totals.sale_id', '=', 'sales.id');
+            })
+            ->whereNotIn('sales.status', ['VOIDED', 'REFUNDED'])
+            ->selectRaw(
+                'COALESCE(SUM(GREATEST(sales.total - COALESCE(payment_totals.paid_amount, 0), 0)), 0) as outstanding'
+            );
 
         if (isset($filters['date_from'])) {
             $query->whereDate('sales.created_at', '>=', $filters['date_from']);

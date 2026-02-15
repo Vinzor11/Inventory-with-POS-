@@ -41,6 +41,55 @@ class DashboardQueryService
         $this->weighInsReportService = $weighInsReportService;
     }
 
+    private function saleDateExpression(): string
+    {
+        return "COALESCE(sales.sale_date, DATE(sales.created_at))";
+    }
+
+    private function adjustedSalesTotals(array $filters = []): array
+    {
+        $refundSubquery = DB::table('refund_items')
+            ->select('sale_item_id')
+            ->selectRaw('SUM(quantity) as refunded_qty')
+            ->groupBy('sale_item_id');
+
+        $query = DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('product_variants', 'sale_items.product_variant_id', '=', 'product_variants.id')
+            ->leftJoinSub($refundSubquery, 'refund_totals', function ($join): void {
+                $join->on('refund_totals.sale_item_id', '=', 'sale_items.id');
+            })
+            ->where('sales.status', '!=', 'VOIDED');
+
+        if (isset($filters['date_from'])) {
+            $query->whereRaw($this->saleDateExpression() . ' >= ?', [$filters['date_from']]);
+        }
+        if (isset($filters['date_to'])) {
+            $query->whereRaw($this->saleDateExpression() . ' <= ?', [$filters['date_to']]);
+        }
+
+        $remainingQtyExpr = "GREATEST(sale_items.quantity - COALESCE(sale_items.canceled_quantity, 0) - COALESCE(refund_totals.refunded_qty, 0), 0)";
+        $qtyRatioExpr = "CASE WHEN sale_items.quantity > 0 THEN ($remainingQtyExpr / sale_items.quantity) ELSE 0 END";
+        $adjustedRevenueExpr = "(sale_items.line_total * ($qtyRatioExpr))";
+        $fallbackUnitCostExpr = "COALESCE(NULLIF(product_variants.purchase_price, 0), product_variants.unit_price, 0)";
+        $adjustedCostExpr = "COALESCE((sale_items.total_cost * ($qtyRatioExpr)), (($remainingQtyExpr) * COALESCE(sale_items.unit_cost, $fallbackUnitCostExpr)))";
+
+        $totals = $query
+            ->selectRaw("COALESCE(SUM($adjustedRevenueExpr), 0) as adjusted_gross_sales")
+            ->selectRaw("COALESCE(SUM($adjustedCostExpr), 0) as adjusted_total_cost")
+            ->first();
+
+        $grossSales = (float) ($totals->adjusted_gross_sales ?? 0);
+        $totalCost = (float) ($totals->adjusted_total_cost ?? 0);
+
+        return [
+            'gross_sales' => $grossSales,
+            'total_cost' => $totalCost,
+            'gross_profit' => $grossSales - $totalCost,
+            'net_sales' => $grossSales,
+        ];
+    }
+
     /**
      * Get all dashboard KPIs
      */
@@ -69,49 +118,22 @@ class DashboardQueryService
      */
     protected function getSalesKPIs(Carbon $today, Carbon $thisWeek, Carbon $thisMonth): array
     {
-        // Today
         $todayFilters = ['date_from' => $today->format('Y-m-d'), 'date_to' => $today->format('Y-m-d')];
-        $todayGross = $this->salesReportService->getGrossSalesTotal($todayFilters);
-        $todayCost = $this->salesReportService->getSalesCostTotal($todayFilters);
-        $todayGrossProfit = $todayGross - $todayCost;
-        $todayNet = $this->salesReportService->getNetSalesTotal($todayFilters);
+        $todayTotals = $this->adjustedSalesTotals($todayFilters);
 
-        // This Week
         $weekFilters = ['date_from' => $thisWeek->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
-        $weekGross = $this->salesReportService->getGrossSalesTotal($weekFilters);
-        $weekCost = $this->salesReportService->getSalesCostTotal($weekFilters);
-        $weekGrossProfit = $weekGross - $weekCost;
-        $weekNet = $this->salesReportService->getNetSalesTotal($weekFilters);
+        $weekTotals = $this->adjustedSalesTotals($weekFilters);
 
-        // This Month
         $monthFilters = ['date_from' => $thisMonth->format('Y-m-d'), 'date_to' => Carbon::now()->format('Y-m-d')];
-        $monthGross = $this->salesReportService->getGrossSalesTotal($monthFilters);
-        $monthCost = $this->salesReportService->getSalesCostTotal($monthFilters);
-        $monthGrossProfit = $monthGross - $monthCost;
-        $monthNet = $this->salesReportService->getNetSalesTotal($monthFilters);
+        $monthTotals = $this->adjustedSalesTotals($monthFilters);
 
         // Sales by status (all time for now, can be filtered)
         $salesByStatus = $this->salesReportService->getSummaryByStatus([]);
 
         return [
-            'today' => [
-                'gross_sales' => $todayGross,
-                'total_cost' => $todayCost,
-                'gross_profit' => $todayGrossProfit,
-                'net_sales' => $todayNet,
-            ],
-            'this_week' => [
-                'gross_sales' => $weekGross,
-                'total_cost' => $weekCost,
-                'gross_profit' => $weekGrossProfit,
-                'net_sales' => $weekNet,
-            ],
-            'this_month' => [
-                'gross_sales' => $monthGross,
-                'total_cost' => $monthCost,
-                'gross_profit' => $monthGrossProfit,
-                'net_sales' => $monthNet,
-            ],
+            'today' => $todayTotals,
+            'this_week' => $weekTotals,
+            'this_month' => $monthTotals,
             'by_status' => [
                 'OPEN' => $salesByStatus['OPEN'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
                 'PARTIAL' => $salesByStatus['PARTIAL'] ?? ['count' => 0, 'gross_sales' => 0, 'total_cost' => 0, 'gross_profit' => 0, 'total_refunded' => 0, 'net_sales' => 0],
@@ -286,6 +308,7 @@ class DashboardQueryService
             ->selectRaw('COUNT(*) as count')
             ->whereDate('created_at', '>=', $thisMonth->format('Y-m-d'))
             ->whereDate('created_at', '<=', Carbon::now()->format('Y-m-d'))
+            ->where('status', '!=', 'VOIDED')
             ->groupBy(DB::raw('DATE(created_at)'))
             ->orderBy('date')
             ->get()
