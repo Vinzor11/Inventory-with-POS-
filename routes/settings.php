@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\DatabaseExportController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
@@ -26,6 +27,12 @@ Route::middleware('auth')->group(function () {
     Route::get('settings/printer', function () {
         return Inertia::render('settings/printer');
     })->name('printer.edit');
+
+    Route::get('settings/database', [DatabaseExportController::class, 'edit'])
+        ->name('settings.database.edit');
+
+    Route::get('settings/database/export', [DatabaseExportController::class, 'export'])
+        ->name('settings.database.export');
 
     Route::get('settings/two-factor', [TwoFactorAuthenticationController::class, 'show'])
         ->name('two-factor.show');

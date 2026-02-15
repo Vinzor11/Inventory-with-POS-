@@ -36,6 +36,11 @@ const sidebarNavItems: NavItem[] = [
         href: '/settings/printer',
         icon: null,
     },
+    {
+        title: 'Database',
+        href: '/settings/database',
+        icon: null,
+    },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
