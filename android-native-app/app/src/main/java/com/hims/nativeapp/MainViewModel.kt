@@ -80,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val deactivatedAccountMessage = "Your account has been deactivated. Contact an administrator."
     private val autoRefreshDebounceMs = 400L
     private val receiptCharWidth = 48
+    private val receiptSeparatorChar = '-'
     private val receiptSeparatorChars = setOf('-', '=', '.', '_')
 
     private val sessionStore = SessionStore(application)
@@ -3290,7 +3291,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .map { line ->
                 val trimmed = line.trim()
                 if (trimmed.isNotEmpty() && trimmed.all { char -> char in receiptSeparatorChars }) {
-                    "_".repeat(receiptCharWidth)
+                    receiptSeparatorChar.toString().repeat(receiptCharWidth)
                 } else {
                     line
                 }
