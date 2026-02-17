@@ -73,6 +73,7 @@ class ReceiptPrintService
         if ($discount > 0) {
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
+        $lines[] = $this->separator('-');
         $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
         $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
         $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
@@ -194,6 +195,7 @@ class ReceiptPrintService
         if ($discount > 0) {
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
+        $lines[] = $this->separator('-');
         $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
         $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
         $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
@@ -334,6 +336,7 @@ class ReceiptPrintService
         }
         
         $lines[] = "Total: " . number_format($delivery->items->sum('quantity'), 0) . " items";
+        $lines[] = $this->separator('-');
         
         // Remaining items for partial delivery
         if ($delivery->status === 'partial' && $delivery->sale) {
@@ -437,6 +440,7 @@ class ReceiptPrintService
         }
         
         $lines[] = "Total: " . number_format($delivery->items->sum('quantity'), 0) . " items";
+        $lines[] = $this->separator('-');
         
         // Remaining items for partial delivery
         if ($delivery->status === 'partial' && $delivery->sale) {
@@ -609,6 +613,7 @@ class ReceiptPrintService
         }
         
         // Grand Total
+        $lines[] = $this->separator('-');
         $lines[] = $this->formatAmountLineBold("TOTAL AMOUNT", (float)($transaction->total_amount ?? 0));
         $lines[] = $this->separator('=');
         
@@ -731,6 +736,7 @@ class ReceiptPrintService
         }
         
         // Grand Total (plain text, no bold)
+        $lines[] = $this->separator('-');
         $lines[] = $this->formatAmountLine("TOTAL AMOUNT", (float)($transaction->total_amount ?? 0));
         $lines[] = $this->separator('=');
         
