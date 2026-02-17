@@ -52,7 +52,6 @@ class ReceiptPrintService
         
         // Items Header
         $lines[] = $this->formatSalesItemHeader();
-        $lines[] = $this->separator('-');
         
         // Items
         foreach ($sale->items as $item) {
@@ -68,15 +67,12 @@ class ReceiptPrintService
             ));
         }
         
-        $lines[] = $this->separator('-');
-        
         // Totals
         $lines[] = $this->formatAmountLine("Subtotal", (float)$sale->subtotal);
         $discount = $paymentSummary['discount'] ?? 0;
         if ($discount > 0) {
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
-        $lines[] = $this->separator('-');
         $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
         $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
         $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
@@ -140,7 +136,6 @@ class ReceiptPrintService
         $lines[] = $this->separator('-');
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         // Feed and cut
         $lines[] = "\n\n\n";
@@ -178,7 +173,6 @@ class ReceiptPrintService
         
         // Items Header
         $lines[] = $this->formatSalesItemHeader();
-        $lines[] = $this->separator('-');
         
         // Items
         foreach ($sale->items as $item) {
@@ -194,15 +188,12 @@ class ReceiptPrintService
             ));
         }
         
-        $lines[] = $this->separator('-');
-        
         // Totals (plain text, no bold)
         $lines[] = $this->formatAmountLine("Subtotal", (float)$sale->subtotal);
         $discount = $paymentSummary['discount'] ?? 0;
         if ($discount > 0) {
             $lines[] = $this->formatAmountLine("Discount", -$discount);
         }
-        $lines[] = $this->separator('-');
         $grossTotal = (float)($paymentSummary['gross_total'] ?? $sale->total);
         $totalRefunded = (float)($paymentSummary['total_refunded'] ?? 0);
         $netTotal = (float)($paymentSummary['net_total'] ?? $grossTotal);
@@ -266,7 +257,6 @@ class ReceiptPrintService
         $lines[] = $this->separator('-');
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         // Just add some blank lines at the end (no cut command)
         $lines[] = "";
@@ -330,7 +320,6 @@ class ReceiptPrintService
                     $lines[] = $line;
                 }
             }
-            $lines[] = $this->separator('-');
         }
         
         // Items - indented format
@@ -344,7 +333,6 @@ class ReceiptPrintService
             $lines[] = "  {$itemName}  {$qty} {$unit}";
         }
         
-        $lines[] = $this->separator('-');
         $lines[] = "Total: " . number_format($delivery->items->sum('quantity'), 0) . " items";
         
         // Remaining items for partial delivery
@@ -365,8 +353,6 @@ class ReceiptPrintService
             }
         }
         
-        $lines[] = $this->separator('=');
-        
         // Compact acknowledgment
         $lines[] = "Received by:";
         $lines[] = "Name: _________________ Sign: _________";
@@ -376,7 +362,6 @@ class ReceiptPrintService
         $lines[] = $this->separator('-');
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         $lines[] = "\n\n\n";
         $lines[] = "\x1D\x56\x00";
@@ -438,7 +423,6 @@ class ReceiptPrintService
                     $lines[] = $line;
                 }
             }
-            $lines[] = $this->separator('-');
         }
         
         // Items - indented format
@@ -452,7 +436,6 @@ class ReceiptPrintService
             $lines[] = "  {$itemName}  {$qty} {$unit}";
         }
         
-        $lines[] = $this->separator('-');
         $lines[] = "Total: " . number_format($delivery->items->sum('quantity'), 0) . " items";
         
         // Remaining items for partial delivery
@@ -473,8 +456,6 @@ class ReceiptPrintService
             }
         }
         
-        $lines[] = $this->separator('=');
-        
         // Compact acknowledgment
         $lines[] = "Received by:";
         $lines[] = "Name: _________________ Sign: _________";
@@ -484,7 +465,6 @@ class ReceiptPrintService
         $lines[] = $this->separator('-');
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         // Just blank lines at the end (no cut command)
         $lines[] = "";
@@ -626,20 +606,11 @@ class ReceiptPrintService
             // Subtotal for this type
             $typeTotal = $items->sum('total_amount');
             $lines[] = $this->formatAmountLine("  Subtotal", (float)$typeTotal);
-            $lines[] = $this->separator('-');
         }
         
         // Grand Total
         $lines[] = $this->formatAmountLineBold("TOTAL AMOUNT", (float)($transaction->total_amount ?? 0));
         $lines[] = $this->separator('=');
-        
-        // Payment status
-        if ($transaction->status === 'paid') {
-            $lines[] = $this->centerText("*** PAID ***");
-        } else {
-            $lines[] = $this->centerText("** UNPAID **");
-            $lines[] = $this->centerText("Present this to cashier");
-        }
         
         // Notes
         if ($transaction->notes) {
@@ -648,11 +619,8 @@ class ReceiptPrintService
         }
         
         // Footer
-        $lines[] = $this->separator('-');
-        $lines[] = $this->centerText("Thank you!");
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         $lines[] = "\n\n\n";
         $lines[] = "\x1D\x56\x00";
@@ -760,20 +728,11 @@ class ReceiptPrintService
             // Subtotal for this type
             $typeTotal = $items->sum('total_amount');
             $lines[] = $this->formatAmountLine("  Subtotal", (float)$typeTotal);
-            $lines[] = $this->separator('-');
         }
         
         // Grand Total (plain text, no bold)
         $lines[] = $this->formatAmountLine("TOTAL AMOUNT", (float)($transaction->total_amount ?? 0));
         $lines[] = $this->separator('=');
-        
-        // Payment status
-        if ($transaction->status === 'paid') {
-            $lines[] = $this->centerText("*** PAID ***");
-        } else {
-            $lines[] = $this->centerText("** UNPAID **");
-            $lines[] = $this->centerText("Present this to cashier");
-        }
         
         // Notes
         if ($transaction->notes) {
@@ -782,11 +741,8 @@ class ReceiptPrintService
         }
         
         // Footer
-        $lines[] = $this->separator('-');
-        $lines[] = $this->centerText("Thank you!");
         $lines[] = "";
         $lines[] = "Printed: " . $this->formatDateTime(now());
-        $lines[] = $this->separator('=');
         
         // Just blank lines at the end (no cut command)
         $lines[] = "";

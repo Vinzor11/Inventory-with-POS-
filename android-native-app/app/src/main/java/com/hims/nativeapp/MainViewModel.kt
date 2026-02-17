@@ -79,6 +79,8 @@ import retrofit2.HttpException
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val deactivatedAccountMessage = "Your account has been deactivated. Contact an administrator."
     private val autoRefreshDebounceMs = 400L
+    private val receiptCharWidth = 48
+    private val receiptSeparatorChars = setOf('-', '=', '.', '_')
 
     private val sessionStore = SessionStore(application)
     private val api = ApiClient.create(sessionStore)
@@ -1770,8 +1772,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             try {
-                val response = api.getSaleReceipt(saleId = saleId)
-                val text = response.data.receiptText.orEmpty()
+                val response = api.getSaleReceipt(saleId = saleId, charWidth = receiptCharWidth)
+                val text = normalizeReceiptTextForPrint(response.data.receiptText.orEmpty())
                 if (text.isBlank()) {
                     uiState = uiState.copy(errorMessage = "Receipt text is empty.")
                     return@launch
@@ -1819,8 +1821,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             try {
-                val response = api.getDeliveryReceipt(deliveryId = deliveryId)
-                val text = response.data.receiptText.orEmpty()
+                val response = api.getDeliveryReceipt(deliveryId = deliveryId, charWidth = receiptCharWidth)
+                val text = normalizeReceiptTextForPrint(response.data.receiptText.orEmpty())
+                if (text.isBlank()) {
+                    uiState = uiState.copy(errorMessage = "Receipt text is empty.")
+                    return@launch
+                }
+                onSuccess(text)
+            } catch (e: Exception) {
+                uiState =
+                    uiState.copy(
+                        errorMessage = networkErrorMessage(e),
+                    )
+            }
+        }
+    }
+
+    fun fetchWeighReceiptText(
+        transactionId: Int,
+        onSuccess: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            try {
+                val response = api.getWeighInReceipt(transactionId = transactionId, charWidth = receiptCharWidth)
+                val text = normalizeReceiptTextForPrint(response.data.receiptText.orEmpty())
                 if (text.isBlank()) {
                     uiState = uiState.copy(errorMessage = "Receipt text is empty.")
                     return@launch
@@ -3252,6 +3276,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "bagol" -> "Bagol"
             else -> type.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
         }
+    }
+
+    private fun normalizeReceiptTextForPrint(raw: String): String {
+        if (raw.isBlank()) {
+            return raw
+        }
+
+        return raw
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .lineSequence()
+            .map { line ->
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty() && trimmed.all { char -> char in receiptSeparatorChars }) {
+                    "_".repeat(receiptCharWidth)
+                } else {
+                    line
+                }
+            }
+            .joinToString("\n")
     }
 
     private fun networkErrorMessage(e: Exception): String {

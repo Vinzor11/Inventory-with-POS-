@@ -626,6 +626,12 @@ data class DeliveryReceiptData(
     val receiptText: String? = null,
 )
 
+data class WeighInReceiptData(
+    val transaction: WeighInTransaction? = null,
+    @SerializedName("receipt_text")
+    val receiptText: String? = null,
+)
+
 data class SalePayment(
     val id: Int,
     val amount: Double = 0.0,

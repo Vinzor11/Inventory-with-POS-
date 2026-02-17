@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.hims.nativeapp.data.model.WeighInTransaction
 import com.hims.nativeapp.ui.AppTab
 import com.hims.nativeapp.ui.AppUiState
 import com.hims.nativeapp.ui.components.BottomNavBar
@@ -64,9 +63,6 @@ import com.hims.nativeapp.ui.screens.WeighMenuScreen
 import com.hims.nativeapp.ui.screens.WeighReportScreen
 import com.hims.nativeapp.ui.screens.WeighScreen
 import com.hims.nativeapp.ui.theme.AppBackground
-import com.hims.nativeapp.util.formatPeso
-import com.hims.nativeapp.util.formatQty
-import com.hims.nativeapp.util.formatTimeLabel
 import com.hims.nativeapp.util.sharePlainText
 
 @OptIn(ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class)
@@ -375,11 +371,13 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                                 pin = pin,
                                 onSuccess = { transaction ->
                                     onSuccess()
-                                    sharePlainText(
-                                        context = context,
-                                        title = "Share Weigh-In Receipt",
-                                        text = buildWeighReceiptText(transaction),
-                                    )
+                                    viewModel.fetchWeighReceiptText(transaction.id) { receiptText ->
+                                        sharePlainText(
+                                            context = context,
+                                            title = "Share Weigh-In Receipt",
+                                            text = receiptText,
+                                        )
+                                    }
                                 },
                             )
                         },
@@ -486,11 +484,13 @@ fun HimsNativeApp(viewModel: MainViewModel = viewModel()) {
                         onMarkPaid = viewModel::markUnpaidWeighTransactionPaid,
                         onUpdatePrice = viewModel::updateWeighPrices,
                         onPrint = { transaction ->
-                            sharePlainText(
-                                context = context,
-                                title = "Share Weigh-In Receipt",
-                                text = buildWeighReceiptText(transaction),
-                            )
+                            viewModel.fetchWeighReceiptText(transaction.id) { receiptText ->
+                                sharePlainText(
+                                    context = context,
+                                    title = "Share Weigh-In Receipt",
+                                    text = receiptText,
+                                )
+                            }
                         },
                         openManagePricesRequestKey = openWeighManagePricesKey,
                         onConsumeManagePricesRequest = { openWeighManagePricesKey = 0 },
@@ -739,42 +739,4 @@ private fun hasActiveFilters(state: AppUiState): Boolean {
         AppTab.MORE,
         -> false
     }
-}
-
-private fun buildWeighReceiptText(transaction: WeighInTransaction): String {
-    val refValue = transaction.refNum ?: "WIT-${transaction.id}"
-    val weighedAt = transaction.weighedAt ?: transaction.createdAt.orEmpty()
-    val lines = mutableListOf<String>()
-    lines += "HIMS Weigh-In Receipt"
-    lines += "Ref: $refValue"
-    if (!transaction.supplierName.isNullOrBlank()) {
-        lines += "Supplier: ${transaction.supplierName}"
-    }
-    lines += "Status: ${transaction.status?.replaceFirstChar { it.uppercaseChar() } ?: "-"}"
-    lines += "Weighed by: ${transaction.weighedBy?.name ?: "-"}"
-    if (weighedAt.isNotBlank()) {
-        lines += "Date/Time: ${formatTimeLabel(weighedAt)}"
-    }
-    lines += ""
-    lines += "Items:"
-    transaction.weighIns.forEachIndexed { index, item ->
-        val typeLabel =
-            when (item.type?.trim()?.lowercase()) {
-                "cooked_copra" -> "Cooked Copra"
-                "uncooked_copra" -> "Uncooked Copra"
-                "coconut" -> "Coconut"
-                "bagol" -> "Bagol"
-                else -> item.type.orEmpty().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
-            }
-        val qtyLabel =
-            if (item.type == "coconut") {
-                "${formatQty(item.count ?: 0.0)} pcs"
-            } else {
-                "${formatQty(item.weightKg ?: 0.0)} kg"
-            }
-        lines += "${index + 1}. $typeLabel - $qtyLabel - ${formatPeso(item.totalAmount)}"
-    }
-    lines += ""
-    lines += "Total: ${formatPeso(transaction.totalAmount)}"
-    return lines.joinToString(separator = "\n")
 }

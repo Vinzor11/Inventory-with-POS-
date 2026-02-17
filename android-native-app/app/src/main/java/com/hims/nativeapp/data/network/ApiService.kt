@@ -48,6 +48,7 @@ import com.hims.nativeapp.data.model.WeighLandingData
 import com.hims.nativeapp.data.model.WeighBatchStoreRequest
 import com.hims.nativeapp.data.model.BootstrapResponse
 import com.hims.nativeapp.data.model.WeighInPrice
+import com.hims.nativeapp.data.model.WeighInReceiptData
 import com.hims.nativeapp.data.model.WeighPriceUpdateRequest
 import com.hims.nativeapp.data.model.WeighInTransaction
 import retrofit2.Response
@@ -190,7 +191,7 @@ interface ApiService {
     @GET("api/receipts/sales/{saleId}")
     suspend fun getSaleReceipt(
         @Path("saleId") saleId: Int,
-        @Query("char_width") charWidth: Int = 80,
+        @Query("char_width") charWidth: Int = 48,
     ): ApiEnvelope<SaleReceiptData>
 
     @GET("api/sales/{saleId}/payments")
@@ -242,8 +243,14 @@ interface ApiService {
     @GET("api/receipts/deliveries/{deliveryId}")
     suspend fun getDeliveryReceipt(
         @Path("deliveryId") deliveryId: Int,
-        @Query("char_width") charWidth: Int = 80,
+        @Query("char_width") charWidth: Int = 48,
     ): ApiEnvelope<DeliveryReceiptData>
+
+    @GET("api/receipts/weigh-ins/{transactionId}")
+    suspend fun getWeighInReceipt(
+        @Path("transactionId") transactionId: Int,
+        @Query("char_width") charWidth: Int = 48,
+    ): ApiEnvelope<WeighInReceiptData>
 
     @GET("api/weigh-ins")
     suspend fun getWeighIns(
